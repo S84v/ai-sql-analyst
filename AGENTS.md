@@ -15,8 +15,9 @@ questions over PostgreSQL, answered by an LLM-powered agent.
 
 ## Layout and toolchain
 - `backend/` — Python 3.12+ service managed with `uv`, using a `src/` layout
-  (`backend/src/ai-sql-analyst/`). Entry point is `ai-sql-analyst:main`. Run it
-  from `backend/` with `uv run ai-sql-analyst`.
+  (`backend/src/ai_sql_analyst/`, distribution name `ai-sql-analyst`). Entry
+  point is `ai_sql_analyst:main`. Run it from `backend/` with
+  `uv run ai-sql-analyst`.
 - `frontend/` — React + TypeScript + Vite SPA managed with `npm`.
 - `data/raw/` — raw input datasets.
 

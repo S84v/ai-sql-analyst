@@ -77,3 +77,72 @@ questions over PostgreSQL, answered by an LLM-powered agent.
 - Explain why, security boundaries, non-obvious framework behavior, database
   lifecycle, and important design decisions.
 - Avoid comments that merely restate the code.
+
+## MCP usage
+
+Use connected MCP servers when they materially improve the current task. Do not invoke MCP tools merely because they are available.
+
+### Source-of-truth hierarchy
+
+For this project, prefer evidence in this order:
+
+1. Actual local repository files and local dataset observations.
+2. Directly derived results from the local database or source data.
+3. Official technical documentation.
+4. External research and community sources.
+
+External research must not override verified local project evidence without an explicit design discussion.
+
+### Context7
+
+Use Context7 when current or version-specific documentation is needed for a library, framework, API, or SDK.
+
+Prefer official/current documentation over remembered API behavior.
+
+### Tavily
+
+Use Tavily when external web research is genuinely required, especially for:
+
+* current documentation or behavior
+* niche technical questions
+* comparing implementation approaches
+* investigating external project conventions
+
+Do not use web research to replace profiling or validation of the local Olist dataset.
+
+### GitHub
+
+Use GitHub when repository history or external repository information is relevant, such as:
+
+* inspecting project history
+* checking upstream implementations
+* reviewing issues or pull requests
+* consulting external source repositories
+
+Prefer the local working tree when the question concerns the current project state.
+
+### Playwright
+
+Use Playwright for browser-level verification of frontend behavior, including:
+
+* UI interaction
+* request/response behavior
+* rendering
+* browser console/network issues
+* end-to-end tests
+
+Do not use Playwright for backend-only or database-only tasks.
+
+### Tool-use discipline
+
+Before using an MCP server, determine whether it materially improves the task.
+
+Do not:
+
+* perform redundant external research
+* replace local inspection with web searches
+* use MCP results as authoritative when verified project evidence exists
+* introduce architecture changes solely because an external example uses them
+* use MCP tools for unrelated exploration
+
+When external information conflicts with project evidence, surface the conflict explicitly and stop before making a significant architectural change.

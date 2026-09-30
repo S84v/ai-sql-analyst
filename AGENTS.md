@@ -78,6 +78,14 @@ questions over PostgreSQL, answered by an LLM-powered agent.
   lifecycle, and important design decisions.
 - Avoid comments that merely restate the code.
 
+## Architecture Decision Records
+- Inspect relevant ADRs in `adr/` before proposing significant architecture
+  changes.
+- Significant finalized architecture decisions must be recorded in `adr/`.
+- ADRs explain the rationale and the rejected alternatives, not just the choice.
+- Trivial implementation details do not require an ADR.
+- `AGENTS.md` holds the workflow rule; `adr/` holds the actual decisions.
+
 ## CI
 - GitHub Actions runs backend pytest on pushes to main and pull requests.
 - Keep local test commands consistent with the CI workflow.

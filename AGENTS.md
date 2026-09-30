@@ -78,6 +78,10 @@ questions over PostgreSQL, answered by an LLM-powered agent.
   lifecycle, and important design decisions.
 - Avoid comments that merely restate the code.
 
+## CI
+- GitHub Actions runs backend pytest on pushes to main and pull requests.
+- Keep local test commands consistent with the CI workflow.
+
 ## MCP usage
 
 Use connected MCP servers when they materially improve the current task. Do not invoke MCP tools merely because they are available.

@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { streamQuery, type QueryEvent } from './api'
+import MarkdownAnswer from './MarkdownAnswer'
 import './App.css'
 
 type Phase = 'idle' | 'running' | 'complete' | 'error'
@@ -182,21 +183,23 @@ function App() {
       {showResult && (
         <section className="run-result">
           <h2>{query.error ? 'Error' : 'Answer'}</h2>
-          {query.error ? (
+          {query.error && (
             <div className="error-box" role="alert">
               {query.error.kind === 'application'
                 ? query.error.message
                 : `Could not reach the analysis service. ${query.error.message}`}
             </div>
-          ) : (
-            <p className="answer">
-              {query.answer !== ''
-                ? query.answer
-                : isRunning
-                  ? 'Preparing answer…'
-                  : ''}
-            </p>
           )}
+          {query.phase === 'complete' ? (
+            <MarkdownAnswer markdown={query.answer} />
+          ) : query.answer !== '' ? (
+            // Partial answer (still running, or a transport/protocol failure):
+            // show the raw text rather than feeding incomplete Markdown to the
+            // parser.
+            <p className="answer-partial">{query.answer}</p>
+          ) : isRunning ? (
+            <p className="answer-placeholder">Preparing answer…</p>
+          ) : null}
         </section>
       )}
     </main>

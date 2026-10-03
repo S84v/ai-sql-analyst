@@ -117,11 +117,153 @@
   overflow-wrap: anywhere;
 }
 
-.answer {
+.answer-placeholder {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Plain-text fallback for a partial answer that must not go through the
+   Markdown parser. */
+.answer-partial {
   margin: 0;
   color: var(--text-h);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.error-box + .answer-partial {
+  margin-top: 0.75rem;
+}
+
+.markdown {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 1.25em 0 0.5em;
+  color: var(--text-h);
+  line-height: 1.25;
+}
+
+.markdown h1 {
+  font-size: 1.5rem;
+}
+
+.markdown h2 {
+  font-size: 1.3rem;
+}
+
+.markdown h3 {
+  font-size: 1.12rem;
+}
+
+.markdown h4 {
+  font-size: 1rem;
+}
+
+.markdown p {
+  margin: 0 0 0.9em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 0.9em;
+  padding-left: 1.4em;
+}
+
+.markdown li {
+  margin: 0.2em 0;
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
+.markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown a:hover {
+  color: var(--accent-hover);
+}
+
+.markdown blockquote {
+  margin: 0 0 0.9em;
+  padding: 0.25em 0 0.25em 1em;
+  color: var(--text-muted);
+  border-left: 3px solid var(--border);
+}
+
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown code {
+  padding: 0.15em 0.4em;
+  font-family: var(--mono);
+  font-size: 0.875em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.markdown pre {
+  margin: 0 0 0.9em;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.markdown pre code {
+  padding: 0;
+  font-size: 0.85rem;
+  background: none;
+  border: 0;
+}
+
+/* Only wide tables scroll; the rest of the answer keeps the page width. */
+.table-scroll {
+  max-width: 100%;
+  margin: 0 0 0.9em;
+  overflow-x: auto;
+}
+
+.markdown table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--border);
+}
+
+.markdown thead th {
+  font-weight: 600;
+  color: var(--text-h);
+  background: var(--bg);
 }
 
 .error-box {

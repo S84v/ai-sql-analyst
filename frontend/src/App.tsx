@@ -7,14 +7,14 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { streamQuery, type QueryEvent } from './api'
-import MarkdownAnswer from './MarkdownAnswer'
+import AnswerReveal from './AnswerReveal'
 import './App.css'
 
 type Phase = 'idle' | 'running' | 'complete' | 'error'
 
 interface QueryState {
   phase: Phase
-  statuses: string[]
+  status: string | null
   answer: string
   error: { kind: 'application' | 'transport'; message: string } | null
 }
@@ -29,7 +29,7 @@ type QueryAction =
 
 const initialQueryState: QueryState = {
   phase: 'idle',
-  statuses: [],
+  status: null,
   answer: '',
   error: null,
 }
@@ -50,10 +50,11 @@ const visuallyHidden: CSSProperties = {
 function queryReducer(state: QueryState, action: QueryAction): QueryState {
   switch (action.type) {
     case 'start':
-      // A new submission always resets the previous run's progress and answer.
-      return { phase: 'running', statuses: [], answer: '', error: null }
+      // A new submission always resets the previous run's status and answer.
+      return { phase: 'running', status: null, answer: '', error: null }
     case 'status':
-      return { ...state, statuses: [...state.statuses, action.message] }
+      // The latest backend status replaces the previous one.
+      return { ...state, status: action.message }
     case 'delta':
       return { ...state, answer: state.answer + action.text }
     case 'complete':
@@ -65,7 +66,8 @@ function queryReducer(state: QueryState, action: QueryAction): QueryState {
         error: { kind: 'application', message: action.message },
       }
     case 'transportError':
-      // Keep any partial statuses/answer so the user sees how far it got.
+      // Keep the current status and any partial answer so the user sees how
+      // far it got.
       return {
         ...state,
         phase: 'error',
@@ -162,22 +164,20 @@ function App() {
         </button>
       </form>
 
-      {/* Only the latest status is announced, to avoid re-reading the whole
-          log on every incremental update. The visible log below is not a live
-          region. This element stays mounted so updates are announced. */}
+      {/* Only the latest status is announced, to avoid re-reading a growing
+          log. The visible status below is not a live region. This element stays
+          mounted so updates are announced. */}
       <p style={visuallyHidden} aria-live="polite">
-        {query.statuses.at(-1) ?? ''}
+        {query.status ?? ''}
       </p>
 
-      {query.statuses.length > 0 && (
-        <section className="run-progress" aria-label="Progress">
-          <h2>Progress</h2>
-          <ol>
-            {query.statuses.map((status, index) => (
-              <li key={index}>{status}</li>
-            ))}
-          </ol>
-        </section>
+      {query.status !== null && query.phase !== 'complete' && (
+        <p className={`run-status${isRunning ? ' run-status-active' : ''}`}>
+          <span className="run-status-mark" aria-hidden="true">
+            ✦
+          </span>
+          <span className="run-status-text">{query.status}</span>
+        </p>
       )}
 
       {showResult && (
@@ -191,7 +191,7 @@ function App() {
             </div>
           )}
           {query.phase === 'complete' ? (
-            <MarkdownAnswer markdown={query.answer} />
+            <AnswerReveal markdown={query.answer} />
           ) : query.answer !== '' ? (
             // Partial answer (still running, or a transport/protocol failure):
             // show the raw text rather than feeding incomplete Markdown to the

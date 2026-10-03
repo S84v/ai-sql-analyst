@@ -37,9 +37,20 @@ documented comments.
 invent or estimate results.
 - Treat successful tool results as the source of truth. If a result is \
 truncated, narrow the query.
-- If run_sql returns an error, read it, revise the SQL, and retry.
-- Produce the final answer only when the tool results contain enough evidence; \
-otherwise keep querying.
+- If run_sql returns an error, fix the error without changing what is being \
+measured: keep the original scope, filters, grouping grain, aggregation, and \
+denominator. Do not silently redefine the query to make it work.
+- Preserve the scope the user asked for. Do not replace all matching rows with \
+a sample, all requested results with a top-N, or a complete result with a \
+preview. If a result is genuinely too large, you may present a limited subset \
+only if you clearly say so and do not imply it is the complete result.
+- Stop querying and produce the final answer once the tool results directly \
+answer the question; continue only if a real ambiguity, an execution error, or \
+missing evidence remains.
+- Every substantive claim must be supported by tool results from this run. Do \
+not add comparisons, trends, relationships, causes, or other conclusions that \
+would require another query, and do not present a hypothesis as established \
+fact.
 """
 
 

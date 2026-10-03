@@ -148,6 +148,37 @@ def test_system_prompt_is_prepended_to_the_model_input():
     assert first_input[1].content == "How many orders?"
 
 
+def _normalized_prompt() -> str:
+    return " ".join(SYSTEM_PROMPT.lower().split())
+
+
+def test_system_prompt_requires_semantic_preserving_sql_repair():
+    prompt = _normalized_prompt()
+    assert "fix the error without changing" in prompt
+    for term in ("scope", "filters", "grouping", "aggregation", "denominator"):
+        assert term in prompt
+
+
+def test_system_prompt_instructs_stopping_when_evidence_is_sufficient():
+    prompt = _normalized_prompt()
+    assert "stop querying" in prompt
+    assert "directly answer" in prompt
+
+
+def test_system_prompt_preserves_requested_result_scope():
+    prompt = _normalized_prompt()
+    assert "top-n" in prompt
+    assert "sample" in prompt
+    assert "preview" in prompt
+    assert "limited" in prompt
+
+
+def test_system_prompt_requires_evidence_discipline():
+    prompt = _normalized_prompt()
+    assert "supported by tool results" in prompt
+    assert "hypothesis" in prompt
+
+
 def test_get_schema_call_round_trips_structured_tool_result(monkeypatch):
     fake = _fake_schema()
     monkeypatch.setattr(tools_module, "get_schema", lambda: fake)

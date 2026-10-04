@@ -43,6 +43,11 @@ const EXAMPLE_QUESTIONS = [
   'Which payment types were most common?',
 ]
 
+// Generic user-facing text for transport/protocol failures; raw exception
+// details are kept for developers (see the console diagnostic in runQuery).
+const TRANSPORT_ERROR_MESSAGE =
+  'Something went wrong while running the analysis. Please try again.'
+
 // Visually hidden, but still available to assistive technology.
 const visuallyHidden: CSSProperties = {
   position: 'absolute',
@@ -125,6 +130,10 @@ function App() {
         applyEvent(event)
       }
     } catch (error) {
+      // Keep the raw detail for developers; the UI shows a generic message.
+      if (import.meta.env.DEV) {
+        console.error('Query transport error:', error)
+      }
       dispatch({
         type: 'transportError',
         message: error instanceof Error ? error.message : String(error),
@@ -166,8 +175,8 @@ function App() {
         <h1 className="brand-name">OlistIQ</h1>
         <p className="brand-tagline">Ask questions about Olist</p>
         <p className="hero-sub">
-          Ask in plain English. OlistIQ inspects the Olist dataset and runs
-          read-only SQL to answer.
+          Ask in plain English. OlistIQ inspects the schema, runs read-only
+          SQL, and answers from database results.
         </p>
       </header>
 
@@ -182,10 +191,10 @@ function App() {
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="What would you like to know?"
+          placeholder="e.g. Which states had the most customers?"
         />
         <div className="query-actions">
-          <p className="query-hint">Ctrl + Enter to run</p>
+          <p className="query-hint">Ctrl/⌘ + Enter to run</p>
           <button type="submit" disabled={!canSubmit}>
             {isRunning ? 'Analyzing…' : 'Ask'}
           </button>
@@ -282,7 +291,7 @@ function App() {
             <div className="error-box" role="alert">
               {query.error.kind === 'application'
                 ? query.error.message
-                : `Could not reach the analysis service. ${query.error.message}`}
+                : TRANSPORT_ERROR_MESSAGE}
             </div>
           )}
           {query.phase === 'complete' ? (

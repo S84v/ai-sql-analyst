@@ -34,6 +34,15 @@ const initialQueryState: QueryState = {
   error: null,
 }
 
+const EXAMPLE_QUESTIONS = [
+  'How many orders were delivered in 2018?',
+  'Which product categories had the most orders?',
+  'Which states had the most customers?',
+  'Who were the top sellers by number of orders?',
+  'How many customers placed more than one order?',
+  'Which payment types were most common?',
+]
+
 // Visually hidden, but still available to assistive technology.
 const visuallyHidden: CSSProperties = {
   position: 'absolute',
@@ -79,6 +88,7 @@ function queryReducer(state: QueryState, action: QueryAction): QueryState {
 function App() {
   const [question, setQuestion] = useState('')
   const [query, dispatch] = useReducer(queryReducer, initialQueryState)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Ref, not state: guards against a double submit within a single tick, before
   // the disabled button can re-render.
   const inFlight = useRef(false)
@@ -136,6 +146,11 @@ function App() {
     }
   }
 
+  function selectExample(example: string) {
+    setQuestion(example)
+    textareaRef.current?.focus()
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -162,6 +177,7 @@ function App() {
         </label>
         <textarea
           id="question"
+          ref={textareaRef}
           rows={3}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
@@ -176,29 +192,72 @@ function App() {
         </div>
       </form>
 
-      <section className="dataset" aria-labelledby="dataset-title">
-        <h2 id="dataset-title" className="dataset-title">
-          Built for the Olist dataset
+      <section className="examples" aria-labelledby="examples-title">
+        <h2 id="examples-title" className="examples-title">
+          Try an example
         </h2>
-        <p className="dataset-copy">
-          Brazilian e-commerce data spanning orders, customers, products,
-          sellers, payments, reviews, and more.
-        </p>
-        <dl className="dataset-stats">
-          <div className="dataset-stat">
-            <dt>Orders</dt>
-            <dd>~99k</dd>
-          </div>
-          <div className="dataset-stat">
-            <dt>Products</dt>
-            <dd>~32.9k</dd>
-          </div>
-          <div className="dataset-stat">
-            <dt>Sellers</dt>
-            <dd>~3.1k</dd>
-          </div>
-        </dl>
+        <ul className="examples-list">
+          {EXAMPLE_QUESTIONS.map((example) => (
+            <li key={example}>
+              <button
+                type="button"
+                className="example"
+                disabled={isRunning}
+                onClick={() => selectExample(example)}
+              >
+                {example}
+              </button>
+            </li>
+          ))}
+        </ul>
       </section>
+
+      {query.phase === 'idle' && (
+        <section className="dataset" aria-labelledby="dataset-title">
+          <h2 id="dataset-title" className="dataset-title">
+            Explore the Olist dataset
+          </h2>
+          <p className="dataset-copy">
+            Olist is a Brazilian e-commerce dataset spanning 2016–2018,
+            covering orders, customers, products, sellers, payments, reviews,
+            and delivery activity — about 99k orders in total.
+          </p>
+          <dl className="dataset-domains">
+            <div className="dataset-domain">
+              <dt>Orders &amp; delivery</dt>
+              <dd>status · purchase date · delivery dates</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Customers &amp; geography</dt>
+              <dd>city · state · ZIP · customer identity</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Products</dt>
+              <dd>category · weight · dimensions · photos</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Order items</dt>
+              <dd>product · seller · price · freight</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Payments</dt>
+              <dd>type · installments · value</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Reviews</dt>
+              <dd>score · comments · review dates</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Sellers</dt>
+              <dd>city · state · ZIP</dd>
+            </div>
+            <div className="dataset-domain">
+              <dt>Geolocation</dt>
+              <dd>ZIP · latitude · longitude</dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       {/* Only the latest status is announced, to avoid re-reading a growing
           log. The visible status below is not a live region. This element stays

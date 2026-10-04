@@ -34,13 +34,37 @@ const initialQueryState: QueryState = {
   error: null,
 }
 
-const EXAMPLE_QUESTIONS = [
-  'How many orders were delivered in 2018?',
-  'Which product categories had the most orders?',
-  'Which states had the most customers?',
-  'Who were the top sellers by number of orders?',
-  'How many customers placed more than one order?',
-  'Which payment types were most common?',
+interface ExampleQuestion {
+  question: string
+  labels: string[]
+}
+
+const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
+  {
+    question: 'How many orders were placed in 2018?',
+    labels: ['filtering', 'aggregation'],
+  },
+  {
+    question: 'Which states had the most customers?',
+    labels: ['grouping', 'customer identity'],
+  },
+  {
+    question: 'Which payment types were most common?',
+    labels: ['grouping', 'aggregation'],
+  },
+  {
+    question: 'Which product categories had the most order items?',
+    labels: ['multi-table join', 'aggregation'],
+  },
+  {
+    question: 'How many customers placed more than one order?',
+    labels: ['customer identity'],
+  },
+  {
+    question:
+      'What percentage of delivered orders arrived after the estimated delivery date?',
+    labels: ['date analysis'],
+  },
 ]
 
 // Generic user-facing text for transport/protocol failures; raw exception
@@ -207,14 +231,18 @@ function App() {
         </h2>
         <ul className="examples-list">
           {EXAMPLE_QUESTIONS.map((example) => (
-            <li key={example}>
+            <li key={example.question}>
               <button
                 type="button"
                 className="example"
                 disabled={isRunning}
-                onClick={() => selectExample(example)}
+                onClick={() => selectExample(example.question)}
               >
-                {example}
+                <span className="example-question">{example.question}</span>
+                <span className="example-skill">
+                  <span aria-hidden="true">ⓘ</span>{' '}
+                  {example.labels.join(' · ')}
+                </span>
               </button>
             </li>
           ))}

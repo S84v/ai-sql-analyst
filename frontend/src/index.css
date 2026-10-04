@@ -1,26 +1,34 @@
 :root {
-  --text: #374151;
-  --text-h: #111827;
-  --text-muted: #6b7280;
-  --bg: #f8fafc;
+  --text: #3f4756;
+  --text-h: #0f172a;
+  --text-muted: #64748b;
+  --bg: #f6f7fb;
   --surface: #ffffff;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  --surface-2: #eef1f8;
+  --border: #e4e7ef;
+  --border-strong: #d2d8e6;
+  --accent: #4f46e5;
+  --accent-2: #06b6d4;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.12);
   --accent-contrast: #ffffff;
-  --error-text: #991b1b;
-  --error-bg: #fef2f2;
-  --error-border: #fecaca;
-  --radius: 8px;
+  --ring: rgba(79, 70, 229, 0.45);
+  --glow: rgba(79, 70, 229, 0.1);
+  --error-text: #b42318;
+  --error-bg: #fef3f2;
+  --error-border: #fecdca;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
   --shadow:
-    0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.1);
+    0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 28px -16px rgba(15, 23, 42, 0.22);
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
 
   font-family: var(--sans);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--text);
   background: var(--bg);
   color-scheme: light dark;
@@ -32,19 +40,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #cbd5e1;
+    --text: #c3cbdc;
     --text-h: #f1f5f9;
     --text-muted: #94a3b8;
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --border: #334155;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-contrast: #0f172a;
-    --error-text: #fecaca;
-    --error-bg: #450a0a;
-    --error-border: #7f1d1d;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.5);
+    --bg: #0b1020;
+    --surface: #141a2c;
+    --surface-2: #1b2337;
+    --border: #26304a;
+    --border-strong: #333e5c;
+    --accent: #818cf8;
+    --accent-2: #22d3ee;
+    --accent-hover: #a5b4fc;
+    --accent-soft: rgba(129, 140, 248, 0.16);
+    --accent-contrast: #0b1020;
+    --ring: rgba(129, 140, 248, 0.55);
+    --glow: rgba(99, 102, 241, 0.16);
+    --error-text: #fda4af;
+    --error-bg: #2a1215;
+    --error-border: #5b1f2a;
+    --shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px -18px rgba(0, 0, 0, 0.75);
   }
 }
 
@@ -61,7 +76,10 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
-  background: var(--bg);
+  background:
+    radial-gradient(1100px 520px at 50% -220px, var(--glow), transparent 70%),
+    var(--bg);
+  background-repeat: no-repeat;
 }
 
 #root {

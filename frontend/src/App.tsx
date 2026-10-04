@@ -138,30 +138,42 @@ function App() {
 
   return (
     <main className="app">
-      <header className="app-header">
-        <h1>AI SQL Analyst</h1>
-        <p>
-          Ask natural-language questions about the Olist e-commerce dataset. The
-          agent inspects the database schema and runs read-only SQL to answer.
+      <header className="hero">
+        {/* Decorative brand mark; the h1 names the product. */}
+        <img
+          className="brand-mark"
+          src="/olistiq.svg"
+          alt=""
+          aria-hidden="true"
+          width={46}
+          height={46}
+        />
+        <h1 className="brand-name">OlistIQ</h1>
+        <p className="brand-tagline">Ask questions about Olist</p>
+        <p className="hero-sub">
+          Ask in plain English. OlistIQ inspects the Olist dataset and runs
+          read-only SQL to answer.
         </p>
       </header>
 
       <form className="query-form" onSubmit={handleSubmit}>
-        <label htmlFor="question">Your question</label>
+        <label htmlFor="question" style={visuallyHidden}>
+          Your question
+        </label>
         <textarea
           id="question"
           rows={3}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="e.g. How many orders were placed in 2017?"
+          placeholder="What would you like to know?"
         />
-        <p className="query-hint">
-          Enter adds a new line. Press Ctrl+Enter (Cmd+Enter on Mac) to submit.
-        </p>
-        <button type="submit" disabled={!canSubmit}>
-          {isRunning ? 'Analyzing…' : 'Ask'}
-        </button>
+        <div className="query-actions">
+          <p className="query-hint">Ctrl + Enter to run</p>
+          <button type="submit" disabled={!canSubmit}>
+            {isRunning ? 'Analyzing…' : 'Ask'}
+          </button>
+        </div>
       </form>
 
       {/* Only the latest status is announced, to avoid re-reading a growing

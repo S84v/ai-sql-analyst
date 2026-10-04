@@ -2,113 +2,160 @@
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 2rem 1rem 4rem;
+  padding: clamp(1.5rem, 4vw, 3rem) 1.25rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
   text-align: left;
 }
 
-.app-header h1 {
-  margin: 0 0 0.5rem;
-  font-size: clamp(1.6rem, 4vw, 2rem);
-  letter-spacing: -0.02em;
+/* ---------- Product identity ---------- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
 }
 
-.app-header p {
+.brand-mark {
+  width: 46px;
+  height: 46px;
+  margin-bottom: 0.5rem;
+  border-radius: 13px;
+  box-shadow: 0 12px 26px -12px rgba(79, 70, 229, 0.65);
+}
+
+.brand-name {
   margin: 0;
-  max-width: 60ch;
+  font-size: clamp(2rem, 6vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+.brand-tagline {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.hero-sub {
+  margin: 0.35rem 0 0;
+  max-width: 52ch;
+  font-size: 0.95rem;
   color: var(--text-muted);
 }
+
+/* ---------- Query composer ---------- */
 
 .query-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 1.25rem;
+  padding: 0.85rem 1rem 0.85rem;
+  /* Solid first as a fallback, then a subtle translucency where supported. */
   background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
-.query-form label {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-h);
+.query-form:focus-within {
+  border-color: var(--accent);
+  box-shadow:
+    var(--shadow),
+    0 0 0 4px var(--accent-soft);
 }
 
 .query-form textarea {
   width: 100%;
-  min-height: 5.5rem;
-  padding: 0.75rem;
+  min-height: 6rem;
+  padding: 0.55rem 0.35rem;
   font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.55;
   color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
   resize: vertical;
 }
 
-.query-form textarea:focus-visible,
-.query-form button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.query-form textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.query-form textarea:focus {
+  outline: none;
+}
+
+.query-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
 }
 
 .query-hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
 }
 
 .query-form button {
-  align-self: flex-start;
-  min-height: 44px;
-  margin-top: 0.25rem;
-  padding: 0.65rem 1.5rem;
+  min-height: 42px;
+  padding: 0.6rem 1.5rem;
   font: inherit;
   font-weight: 600;
   color: var(--accent-contrast);
   background: var(--accent);
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  box-shadow: 0 12px 22px -14px var(--accent);
+  transition:
+    background-color 0.15s ease,
+    transform 0.12s ease,
+    box-shadow 0.18s ease;
 }
 
 .query-form button:hover:not(:disabled) {
   background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.query-form button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .query-form button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
+  box-shadow: none;
 }
 
-.run-result {
-  padding: 1.25rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+.query-form button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
-.run-result h2 {
-  margin: 0 0 0.75rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-}
+/* ---------- Analysis status ---------- */
 
 .run-status {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   margin: 0;
+  font-size: 1rem;
   color: var(--text-muted);
+  text-align: center;
 }
 
 .run-status-text {
@@ -117,12 +164,15 @@
 
 .run-status-mark {
   flex: none;
+  font-size: 0.9em;
   color: var(--accent);
 }
 
 /* The pulse runs only while a query is actually working; the error state keeps
-   the last status visible but static. */
-.run-status-active .run-status-mark {
+   the last status visible but static. Mark and text share one animation so they
+   pulse in sync. */
+.run-status-active .run-status-mark,
+.run-status-active .run-status-text {
   animation: status-pulse 1.6s ease-in-out infinite;
 }
 
@@ -134,6 +184,35 @@
   50% {
     opacity: 1;
   }
+}
+
+/* ---------- Result (open panel) ---------- */
+
+.run-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+
+.run-result h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.run-result h2::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 .answer-placeholder {
@@ -154,8 +233,20 @@
   margin-top: 0.75rem;
 }
 
+.error-box {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  color: var(--error-text);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius);
+}
+
+/* ---------- Rendered answer ---------- */
+
 .markdown {
   color: var(--text);
+  font-size: 1rem;
   overflow-wrap: anywhere;
 }
 
@@ -171,13 +262,14 @@
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  margin: 1.25em 0 0.5em;
+  margin: 1.4em 0 0.55em;
   color: var(--text-h);
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .markdown h1 {
-  font-size: 1.5rem;
+  font-size: 1.55rem;
 }
 
 .markdown h2 {
@@ -193,17 +285,17 @@
 }
 
 .markdown p {
-  margin: 0 0 0.9em;
+  margin: 0 0 1em;
 }
 
 .markdown ul,
 .markdown ol {
-  margin: 0 0 0.9em;
+  margin: 0 0 1em;
   padding-left: 1.4em;
 }
 
 .markdown li {
-  margin: 0.2em 0;
+  margin: 0.25em 0;
 }
 
 .markdown li > ul,
@@ -222,10 +314,10 @@
 }
 
 .markdown blockquote {
-  margin: 0 0 0.9em;
-  padding: 0.25em 0 0.25em 1em;
+  margin: 0 0 1em;
+  padding: 0.3em 0 0.3em 1em;
   color: var(--text-muted);
-  border-left: 3px solid var(--border);
+  border-left: 3px solid var(--border-strong);
 }
 
 .markdown blockquote > :last-child {
@@ -236,16 +328,16 @@
   padding: 0.15em 0.4em;
   font-family: var(--mono);
   font-size: 0.875em;
-  background: var(--bg);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 5px;
 }
 
 .markdown pre {
-  margin: 0 0 0.9em;
-  padding: 0.85rem 1rem;
+  margin: 0 0 1em;
+  padding: 0.9rem 1rem;
   overflow-x: auto;
-  background: var(--bg);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -260,7 +352,7 @@
 /* Only wide tables scroll; the rest of the answer keeps the page width. */
 .table-scroll {
   max-width: 100%;
-  margin: 0 0 0.9em;
+  margin: 0 0 1em;
   overflow-x: auto;
 }
 
@@ -269,6 +361,7 @@
   min-width: 100%;
   border-collapse: collapse;
   font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .markdown th,
@@ -282,7 +375,7 @@
 .markdown thead th {
   font-weight: 600;
   color: var(--text-h);
-  background: var(--bg);
+  background: var(--surface-2);
 }
 
 /* Visual reveal of the already-rendered answer: each top-level Markdown block
@@ -302,33 +395,35 @@
   }
 }
 
-.error-box {
-  margin: 0;
-  padding: 0.75rem 1rem;
-  color: var(--error-text);
-  background: var(--error-bg);
-  border: 1px solid var(--error-border);
-  border-radius: var(--radius);
-}
+/* ---------- Responsive ---------- */
 
 @media (max-width: 640px) {
   .app {
-    gap: 1.25rem;
-    padding: 1.25rem 0.875rem 3rem;
+    gap: 1.4rem;
+    padding: 1.5rem 1rem 3rem;
   }
 
   .query-form {
-    padding: 1rem;
+    padding: 0.8rem;
+  }
+
+  .query-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .query-hint {
+    text-align: center;
   }
 
   .query-form button {
     width: 100%;
-    align-self: stretch;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .run-status-active .run-status-mark {
+  .run-status-active .run-status-mark,
+  .run-status-active .run-status-text {
     animation: none;
   }
 

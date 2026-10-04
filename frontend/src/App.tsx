@@ -176,6 +176,30 @@ function App() {
         </div>
       </form>
 
+      <section className="dataset" aria-labelledby="dataset-title">
+        <h2 id="dataset-title" className="dataset-title">
+          Built for the Olist dataset
+        </h2>
+        <p className="dataset-copy">
+          Brazilian e-commerce data spanning orders, customers, products,
+          sellers, payments, reviews, and more.
+        </p>
+        <dl className="dataset-stats">
+          <div className="dataset-stat">
+            <dt>Orders</dt>
+            <dd>~99k</dd>
+          </div>
+          <div className="dataset-stat">
+            <dt>Products</dt>
+            <dd>~32.9k</dd>
+          </div>
+          <div className="dataset-stat">
+            <dt>Sellers</dt>
+            <dd>~3.1k</dd>
+          </div>
+        </dl>
+      </section>
+
       {/* Only the latest status is announced, to avoid re-reading a growing
           log. The visible status below is not a live region. This element stays
           mounted so updates are announced. */}

@@ -1,0 +1,34 @@
+flowchart TB
+    UI["React + TypeScript + Vite<br>OlistIQ SPA"] -- POST /query · SSE --> API["FastAPI<br>HTTP / SSE boundary"]
+    API --> AGENT["LangGraph<br>Provider-neutral agent"]
+    AGENT --> TOOLS["LangChain tools<br>get_schema · run_sql"] & MODEL["model.py<br>DeepSeek Responses API"]
+    TOOLS --> SCHEMA["schema.py<br>Schema introspection"] & QUERY["query.py<br>Read-only SQL boundary"]
+    SCHEMA --> DB[("PostgreSQL 16<br>Olist dataset")]
+    QUERY --> DB
+    MCP_CLIENT["MCP client"] -- stdio --> MCP["mcp_server.py<br>MCP stdio adapter"]
+    MCP --> SCHEMA & QUERY
+
+    UI@{ shape: rounded}
+    API@{ shape: rounded}
+    AGENT@{ shape: rounded}
+    TOOLS@{ shape: rounded}
+    SCHEMA@{ shape: rounded}
+    QUERY@{ shape: rounded}
+    MODEL@{ shape: rounded}
+    MCP_CLIENT@{ shape: rounded}
+    MCP@{ shape: rounded}
+     UI:::app
+     API:::app
+     AGENT:::app
+     TOOLS:::app
+     SCHEMA:::core
+     QUERY:::core
+     DB:::db
+     MODEL:::model
+     MCP_CLIENT:::mcp
+     MCP:::mcp
+    classDef app fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#0f172a
+    classDef core fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a
+    classDef model fill:#ecfeff,stroke:#0891b2,stroke-width:1.5px,color:#0f172a
+    classDef db fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a
+    classDef mcp fill:#f5f3ff,stroke:#7c3aed,stroke-width:1.5px,color:#0f172a

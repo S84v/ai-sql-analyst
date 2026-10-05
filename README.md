@@ -42,7 +42,7 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
 
 ## Architecture
 
-![OlistIQ architecture](docs/images/architecture.svg)
+<img src="docs/images/architecture.svg" alt="OlistIQ architecture" width="700">
 
 [View Mermaid source](docs/images/architecture.mmd)
 
@@ -56,7 +56,7 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
    framework-neutral database core.
 5. PostgreSQL executes each query in a read-only transaction.
 
-## MCP path (additive)
+## MCP path
 
 ```text
 MCP client

@@ -1,7 +1,7 @@
 [project]
 name = "ai-sql-analyst"
 version = "0.1.0"
-description = "Add your description here"
+description = "Natural-language analytical agent over PostgreSQL using LangGraph, FastAPI, and MCP"
 readme = "README.md"
 authors = [
     { name = "Sarang Dave", email = "131434471+S84v@users.noreply.github.com" }
@@ -19,7 +19,6 @@ dependencies = [
 ]
 
 [project.scripts]
-ai-sql-analyst = "ai_sql_analyst:main"
 ai-sql-analyst-mcp = "ai_sql_analyst.mcp_server:main"
 
 [build-system]

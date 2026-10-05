@@ -83,6 +83,15 @@ Verified row counts after ingestion:
 | `sellers` | 3,095 |
 | `product_category_translation` | 71 |
 
+## Data model
+
+The diagram reflects the current physical PostgreSQL schema, including the
+actual composite primary keys and foreign-key relationships.
+
+![Olist data model](../docs/images/erdiagram.svg)
+
+[View Mermaid source](../docs/images/erdiagram.mmd)
+
 ## Important SQL semantics
 
 These caveats are necessary for correct analysis. The physical schema and

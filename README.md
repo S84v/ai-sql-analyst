@@ -1,10 +1,31 @@
-# OlistIQ
+<div align="center">
 
-**Ask questions about the Olist e-commerce dataset in plain English.** OlistIQ
-turns a natural-language analytical question into a grounded answer: an LLM
+  <img src="frontend/public/olistiq.svg" alt="OlistIQ" width="56">
+
+  <h1>OlistIQ</h1>
+
+  <p><em>Ask questions in plain English. Get answers grounded in data.</em></p>
+
+  <p>
+    <a href="https://github.com/S84v/ai-sql-analyst/actions/workflows/ci.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/S84v/ai-sql-analyst/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI">
+    </a>
+    <img src="https://img.shields.io/badge/React-frontend-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React frontend">
+    <img src="https://img.shields.io/badge/FastAPI-backend-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI backend">
+    <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 16">
+    <img src="https://img.shields.io/badge/LangGraph-agent-4B5563?style=flat-square&logo=langgraph&logoColor=white" alt="LangGraph agent">
+    <img src="https://img.shields.io/badge/MCP-server-7C3AED?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP server">
+    <img src="https://img.shields.io/badge/DeepSeek-LLM-0F766E?style=flat-square&logo=deepseek&logoColor=white" alt="DeepSeek LLM">
+  </p>
+
+</div>
+
+OlistIQ turns a natural-language analytical question into a grounded answer: an LLM
 agent inspects the live PostgreSQL schema, proposes SQL, and the application
 validates and executes that SQL read-only before answering from the returned
 rows.
+
+![OlistIQ demo](docs/images/olist-front-page.gif)
 
 ## What it is
 
@@ -21,19 +42,9 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
 
 ## Architecture
 
-```text
-React + TypeScript + Vite
-        ↓
-FastAPI /query
-        ↓
-LangGraph agent
-        ↓
-LangChain model/tool integration
-        ↓
-PostgreSQL
-        ↓
-Olist dataset
-```
+![OlistIQ architecture](docs/images/architecture.svg)
+
+[View Mermaid source](docs/images/architecture.mmd)
 
 ## Application request path
 

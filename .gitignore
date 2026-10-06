@@ -7,3 +7,6 @@ __pycache__/
 .env
 data/raw/*
 !data/raw/.gitkeep
+
+# Generated evaluation reports (ADR-008)
+backend/evals/reports/

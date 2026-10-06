@@ -272,6 +272,22 @@ npm run lint
 The frontend has no automated test runner; the TypeScript build and oxlint are
 the current checks.
 
+### Agent evaluation (opt-in)
+
+A **20-case golden evaluation suite** scores the real agent end to end against the
+live database. On the current live DeepSeek baseline, **19/20 cases passed (95%)**.
+
+- Exact analytical correctness is validated by **deterministic PostgreSQL oracle
+  queries**, not by a model.
+- One limited, informational LLM judge covers only subjective answer
+  grounding/scope; it does not decide pass/fail.
+- The single known failing case is an intentionally expensive query that reaches
+  the configured timeout — a deliberate robustness boundary, not a hidden result.
+
+The suite is opt-in and not part of CI. See
+[`backend/evals/README.md`](backend/evals/README.md) for the methodology and how
+to run it.
+
 ## Current limitations and production hardening
 
 This is a locally runnable reference implementation, not a deployment:

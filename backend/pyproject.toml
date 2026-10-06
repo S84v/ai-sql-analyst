@@ -30,3 +30,8 @@ dev = [
     "httpx2>=2.13.1",
     "pytest>=9.1.1",
 ]
+# Opt-in live evaluation only. Kept out of `dev` so `uv sync --locked --dev`
+# and CI never install DeepEval or its heavy transitive dependencies.
+evals = [
+    "deepeval>=4.2.8",
+]

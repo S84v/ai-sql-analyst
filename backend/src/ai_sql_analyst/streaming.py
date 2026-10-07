@@ -147,6 +147,17 @@ async def translate_agent_events(
                             event = status(message_text)
                             if event is not None:
                                 yield event
+            elif node == "timeout_stop":
+                # The timeout budget was exhausted, so the graph emitted a
+                # deterministic terminal AIMessage without another model turn.
+                # Surface it as the answer (ADR-009) so the client receives the
+                # grounded explanation instead of the generic "no answer" error.
+                # It is not a streamed chunk, so it arrives only via the update.
+                message = _last_message(output)
+                text = getattr(message, "text", "") or ""
+                if text:
+                    saw_answer = True
+                    yield {"type": "answer_delta", "text": text}
 
     if saw_answer:
         yield {"type": "done"}

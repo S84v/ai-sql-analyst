@@ -13,8 +13,10 @@ milestone.
 
 from __future__ import annotations
 
+import json
+
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -40,6 +42,12 @@ truncated, narrow the query.
 - If run_sql returns an error, fix the error without changing what is being \
 measured: keep the original scope, filters, grouping grain, aggregation, and \
 denominator. Do not silently redefine the query to make it work.
+- If run_sql reports a timeout, the computation may exceed the execution budget. \
+You may try a materially cheaper, semantics-preserving reformulation, but do not \
+keep retrying expensive variants. A LIMIT does not make an upstream expensive \
+join or pairwise computation cheaper. After repeated timeouts, stop and say the \
+computation is not feasible within the budget instead of estimating a result or \
+silently changing the requested calculation.
 - Preserve the scope the user asked for. Do not replace all matching rows with \
 a sample, all requested results with a top-N, or a complete result with a \
 preview. If a result is genuinely too large, you may present a limited subset \
@@ -52,6 +60,64 @@ not add comparisons, trends, relationships, causes, or other conclusions that \
 would require another query, and do not present a hypothesis as established \
 fact.
 """
+
+
+# Hardening: a run_sql timeout means the requested computation may be
+# impractical within the execution budget. The agent may recover from early
+# timeouts, but once this many total timeouts are observed in one request the
+# loop stops with a deterministic, grounded answer instead of retrying until
+# LangGraph's recursion limit. The count is derived from the persisted tool
+# messages -- ADR-004 keeps MessagesState as the single source of state -- so a
+# successful query between timeouts does not reset it (ADR-009).
+TIMEOUT_BUDGET = 3
+
+# Deterministic, grounded terminal answer. It states the observed failure
+# (repeated timeouts) and explicitly refuses to estimate or redefine the
+# requested calculation; it introduces no numbers that could be read as a
+# fabricated result.
+TIMEOUT_STOP_MESSAGE = (
+    "The requested analysis could not be completed within the database "
+    "execution time limit after multiple query attempts. No estimate or partial "
+    "result is being presented as the complete answer. Try narrowing the "
+    "question or adding filters and run it again."
+)
+
+
+def _timeout_failures(messages: list[BaseMessage]) -> int:
+    """Count the total run_sql timeout failures recorded in one request.
+
+    The count is read from the persisted ``ToolMessage`` history rather than a
+    separate state field, so state stays ``MessagesState``-only (ADR-004/009).
+    It is a total, not a streak: a successful query does not reset it.
+    """
+    count = 0
+    for message in messages:
+        if not isinstance(message, ToolMessage) or message.name != "run_sql":
+            continue
+        content = message.content
+        if not isinstance(content, str):
+            continue
+        try:
+            payload = json.loads(content)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict) and error.get("kind") == "timeout":
+                count += 1
+    return count
+
+
+def _route_after_tools(state: MessagesState) -> str:
+    """Route to the terminal node once the timeout budget is exhausted."""
+    if _timeout_failures(state["messages"]) >= TIMEOUT_BUDGET:
+        return "stop"
+    return "agent"
+
+
+def _timeout_stop_node(state: MessagesState) -> dict[str, list[BaseMessage]]:
+    """Emit the deterministic terminal answer without another model turn."""
+    return {"messages": [AIMessage(content=TIMEOUT_STOP_MESSAGE)]}
 
 
 def _agent_node(bound_model):
@@ -73,18 +139,26 @@ def build_agent(model: BaseChatModel) -> CompiledStateGraph:
     not swallowed: ``ToolNode``'s default error handling only converts
     ``ToolInvocationError`` and re-raises everything else. SQL/validation
     failures do not raise -- they arrive as structured results in the tool's
-    ``ToolMessage`` and remain visible to the model.
+    ``ToolMessage`` and remain visible to the model. SQL timeouts are
+    additionally bounded: after ``TIMEOUT_BUDGET`` total timeouts the ``tools``
+    node routes to a deterministic terminal node instead of the model (ADR-009).
     """
     bound_model = model.bind_tools(list(TOOLS))
 
     builder = StateGraph(MessagesState)
     builder.add_node("agent", _agent_node(bound_model))
     builder.add_node("tools", ToolNode(list(TOOLS)))
+    builder.add_node("timeout_stop", _timeout_stop_node)
     builder.add_edge(START, "agent")
     builder.add_conditional_edges(
         "agent",
         tools_condition,
         {"tools": "tools", "__end__": END},
     )
-    builder.add_edge("tools", "agent")
+    builder.add_conditional_edges(
+        "tools",
+        _route_after_tools,
+        {"agent": "agent", "stop": "timeout_stop"},
+    )
+    builder.add_edge("timeout_stop", END)
     return builder.compile()

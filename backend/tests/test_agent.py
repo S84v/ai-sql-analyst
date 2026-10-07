@@ -25,8 +25,13 @@ from langchain_core.tools import BaseTool
 from pydantic import Field
 
 from ai_sql_analyst import tools as tools_module
-from ai_sql_analyst.agent import SYSTEM_PROMPT, build_agent
-from ai_sql_analyst.query import SqlResult
+from ai_sql_analyst.agent import (
+    SYSTEM_PROMPT,
+    TIMEOUT_BUDGET,
+    TIMEOUT_STOP_MESSAGE,
+    build_agent,
+)
+from ai_sql_analyst.query import SqlError, SqlErrorKind, SqlResult
 from ai_sql_analyst.schema import ColumnSchema, DatabaseSchema, TableSchema
 from ai_sql_analyst.tools import get_schema_tool, run_sql_tool
 
@@ -84,6 +89,15 @@ def _fake_schema() -> DatabaseSchema:
 def _fake_result() -> SqlResult:
     return SqlResult(
         ok=True, columns=("x",), rows=((1,),), row_count=1, truncated=False
+    )
+
+
+def _timeout_result() -> SqlResult:
+    return SqlResult(
+        ok=False,
+        error=SqlError(
+            SqlErrorKind.TIMEOUT, "canceling statement due to statement timeout"
+        ),
     )
 
 
@@ -274,6 +288,115 @@ def test_unexpected_tool_exception_propagates(monkeypatch):
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         graph.invoke({"messages": [HumanMessage(content="What tables exist?")]})
+
+
+# ---------------------------------------------------------------------------
+# Timeout budget (ADR-009)
+# ---------------------------------------------------------------------------
+
+
+def test_system_prompt_covers_timeout_recovery_limits():
+    prompt = _normalized_prompt()
+    assert "timeout" in prompt
+    assert "materially cheaper" in prompt
+    assert "does not make an upstream expensive" in prompt
+    assert "after repeated timeouts, stop" in prompt
+    assert "estimating" in prompt or "estimate" in prompt
+
+
+def test_fewer_than_budget_timeouts_still_allows_recovery(monkeypatch):
+    monkeypatch.setattr(tools_module, "run_sql", lambda sql: _timeout_result())
+    model = _scripted(
+        _tool_call("run_sql", {"sql": "expensive-1"}, "t1"),
+        _tool_call("run_sql", {"sql": "expensive-2"}, "t2"),
+        AIMessage(content="I could not compute it from the evidence."),
+    )
+    _, result = _run(model)
+
+    assert TIMEOUT_BUDGET == 3
+    assert len(_tool_messages(result)) == 2
+    assert result["messages"][-1].content == "I could not compute it from the evidence."
+    assert TIMEOUT_STOP_MESSAGE not in [m.content for m in result["messages"]]
+    assert len(model.seen) == 3
+
+
+def test_total_timeout_budget_terminates_the_loop(monkeypatch):
+    monkeypatch.setattr(tools_module, "run_sql", lambda sql: _timeout_result())
+    model = _scripted(
+        _tool_call("run_sql", {"sql": "expensive-1"}, "t1"),
+        _tool_call("run_sql", {"sql": "expensive-2"}, "t2"),
+        _tool_call("run_sql", {"sql": "expensive-3"}, "t3"),
+        AIMessage(content="this turn must never run"),
+    )
+    _, result = _run(model)
+
+    assert len(_tool_messages(result)) == 3
+    assert isinstance(result["messages"][-1], AIMessage)
+    assert result["messages"][-1].tool_calls == []
+    assert result["messages"][-1].content == TIMEOUT_STOP_MESSAGE
+    assert len(model.seen) == 3  # no model turn after the third timeout
+
+
+def test_successful_query_does_not_reset_the_timeout_budget(monkeypatch):
+    outcomes = iter(
+        [_timeout_result(), _fake_result(), _timeout_result(), _timeout_result()]
+    )
+    monkeypatch.setattr(tools_module, "run_sql", lambda sql: next(outcomes))
+    model = _scripted(
+        _tool_call("run_sql", {"sql": "expensive-1"}, "t1"),
+        _tool_call("run_sql", {"sql": "cheap-diagnostic"}, "t2"),
+        _tool_call("run_sql", {"sql": "expensive-3"}, "t3"),
+        _tool_call("run_sql", {"sql": "expensive-4"}, "t4"),
+        AIMessage(content="this turn must never run"),
+    )
+    _, result = _run(model)
+
+    # timeout -> success -> timeout -> timeout: the success must not reset the
+    # total, so the fourth call (third timeout) terminates the loop.
+    assert len(_tool_messages(result)) == 4
+    assert result["messages"][-1].content == TIMEOUT_STOP_MESSAGE
+    assert len(model.seen) == 4
+
+
+def test_model_never_receives_the_timeout_that_exhausts_the_budget(monkeypatch):
+    monkeypatch.setattr(tools_module, "run_sql", lambda sql: _timeout_result())
+    model = _scripted(
+        _tool_call("run_sql", {"sql": "expensive-1"}, "t1"),
+        _tool_call("run_sql", {"sql": "expensive-2"}, "t2"),
+        _tool_call("run_sql", {"sql": "expensive-3"}, "t3"),
+        AIMessage(content="this turn must never run"),
+    )
+    _, result = _run(model)
+
+    tool_messages = _tool_messages(result)
+    assert len(tool_messages) == 3
+    # The model's last input still ends at the second timeout result; the third
+    # timeout result is consumed only by the application router.
+    last_input_tool_messages = [m for m in model.seen[-1] if isinstance(m, ToolMessage)]
+    assert len(last_input_tool_messages) == 2
+    assert tool_messages[2].tool_call_id not in {
+        m.tool_call_id for m in last_input_tool_messages
+    }
+
+
+def test_terminal_timeout_answer_is_a_normal_final_aimessage(monkeypatch):
+    monkeypatch.setattr(tools_module, "run_sql", lambda sql: _timeout_result())
+    model = _scripted(
+        _tool_call("run_sql", {"sql": "expensive-1"}, "t1"),
+        _tool_call("run_sql", {"sql": "expensive-2"}, "t2"),
+        _tool_call("run_sql", {"sql": "expensive-3"}, "t3"),
+    )
+    _, result = _run(model)
+
+    final = result["messages"][-1]
+    assert isinstance(final, AIMessage)
+    assert final.content == TIMEOUT_STOP_MESSAGE
+    # A consumer reading the last tool-call-free AIMessage (evals/streaming)
+    # sees the terminal answer exactly as for a normal model answer.
+    answers = [
+        m for m in result["messages"] if isinstance(m, AIMessage) and not m.tool_calls
+    ]
+    assert answers[-1] is final
 
 
 # ---------------------------------------------------------------------------

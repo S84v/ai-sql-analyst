@@ -25,6 +25,10 @@ def _tools_update(*messages: Any) -> dict:
     return {"type": "updates", "data": {"tools": {"messages": list(messages)}}}
 
 
+def _timeout_stop_update(message: AIMessage) -> dict:
+    return {"type": "updates", "data": {"timeout_stop": {"messages": [message]}}}
+
+
 def _chunk(chunk: AIMessageChunk) -> dict:
     return {"type": "messages", "data": (chunk, {"langgraph_node": "agent"})}
 
@@ -258,6 +262,28 @@ def test_no_answer_produces_error_not_done():
     ]
     assert events[-1]["type"] == "error"
     assert "done" not in _types(events)
+
+
+def test_timeout_stop_surfaces_the_terminal_answer_as_done():
+    # ADR-009: the deterministic terminal node emits the answer via an update,
+    # not a streamed chunk, so the translator must surface it explicitly.
+    terminal = AIMessage(
+        content="I could not complete the requested computation within the "
+        "database execution time limit."
+    )
+    events = _collect(
+        [
+            _agent_update(_tool_call("run_sql", "r1")),
+            _tools_update(
+                _tool_result("run_sql", {"ok": False, "error": {"kind": "timeout"}}, "r1")
+            ),
+            _timeout_stop_update(terminal),
+        ]
+    )
+
+    assert "error" not in _types(events)
+    assert _types(events)[-1] == "done"
+    assert _answer(events) == terminal.content
 
 
 def test_done_after_answer():

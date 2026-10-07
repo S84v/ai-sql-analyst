@@ -25,12 +25,14 @@ class FakeAgent:
         self._error = error
         self.calls = 0
         self.inputs: list[Any] = []
+        self.config: Any = None
         self.stream_mode: Any = None
         self.version: Any = None
 
-    async def astream(self, input_, stream_mode=None, version=None):
+    async def astream(self, input_, config=None, stream_mode=None, version=None):
         self.calls += 1
         self.inputs.append(input_)
+        self.config = config
         self.stream_mode = stream_mode
         self.version = version
         if self._error is not None:
@@ -167,6 +169,18 @@ def test_agent_stream_uses_messages_and_updates_modes_with_version_v2():
 
     assert agent.stream_mode == ["messages", "updates"]
     assert agent.version == "v2"
+
+
+def test_query_passes_explicit_recursion_limit_backstop():
+    # The production HTTP boundary supplies the same explicit execution bound as
+    # the evaluation runner (25, the current LangGraph default).
+    assert api._RECURSION_LIMIT == 25
+
+    agent = FakeAgent(_answer_events())
+    with TestClient(create_app(agent_factory=lambda: agent)) as client:
+        _stream_lines(client)
+
+    assert agent.config == {"recursion_limit": api._RECURSION_LIMIT}
 
 
 # ---------------------------------------------------------------------------

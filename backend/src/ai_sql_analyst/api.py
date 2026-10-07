@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 # never streamed (ADR-006).
 _STREAM_ERROR_MESSAGE = "The analysis could not be completed."
 
+# Explicit production execution backstop for the LangGraph loop, mirroring the
+# evaluation budget (run_evals.py) and the current LangGraph default
+# (DEFAULT_RECURSION_LIMIT = 25). Passed here, at the HTTP boundary, so the
+# provider-neutral agent (ADR-004) keeps no assumption about a specific value.
+_RECURSION_LIMIT = 25
+
 
 class QueryRequest(BaseModel):
     """A single, independent natural-language analytical question."""
@@ -69,6 +75,7 @@ def create_app(agent_factory: Callable[[], Any] | None = None) -> FastAPI:
         try:
             stream = agent.astream(
                 {"messages": [HumanMessage(content=req.question)]},
+                config={"recursion_limit": _RECURSION_LIMIT},
                 stream_mode=["messages", "updates"],
                 version="v2",
             )

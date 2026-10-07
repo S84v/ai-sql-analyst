@@ -64,6 +64,12 @@ otherwise to `"__end__"`.
   application-level assumption about a specific recursion-limit value and no
   custom iteration machinery; callers may pass the standard `recursion_limit`
   config if they need to bound a run.
+- **Production supplies an explicit execution backstop at the HTTP boundary.**
+  `api.py` passes `recursion_limit=25` to `agent.astream`, matching the
+  evaluation runner's budget and the current LangGraph default
+  (`DEFAULT_RECURSION_LIMIT = 25`). The agent module stays
+  provider/configuration-neutral — it still makes no assumption about a specific
+  value — because the bound is owned by the caller, not by `agent.py`.
 
 ## Alternatives considered
 

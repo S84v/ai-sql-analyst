@@ -27,6 +27,8 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
+from ai_sql_analyst.agent import TIMEOUT_STOP_NODE
+
 # Concise, user-facing progress derived from an agent's tool decisions.
 _TOOL_STATUS = {
     "get_schema": "Inspecting database schema",
@@ -147,7 +149,7 @@ async def translate_agent_events(
                             event = status(message_text)
                             if event is not None:
                                 yield event
-            elif node == "timeout_stop":
+            elif node == TIMEOUT_STOP_NODE:
                 # The timeout budget was exhausted, so the graph emitted a
                 # deterministic terminal AIMessage without another model turn.
                 # Surface it as the answer (ADR-009) so the client receives the

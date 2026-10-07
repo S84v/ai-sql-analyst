@@ -12,9 +12,12 @@ from __future__ import annotations
 import datetime
 import decimal
 import enum
+import time
 from dataclasses import dataclass
 
 import psycopg
+from opentelemetry import metrics, trace
+from opentelemetry.trace import Status, StatusCode
 from psycopg import Connection
 
 from ai_sql_analyst.db import connect
@@ -32,6 +35,24 @@ _ALLOWED_LEADING = frozenset({"SELECT", "WITH", "VALUES", "TABLE"})
 _TIMEOUT_SQLSTATES = frozenset({"57014", "55P03"})  # query_canceled, lock_not_available
 _VALIDATION_SQLSTATES = frozenset(
     {"42601", "25006"}  # syntax_error, read_only_sql_transaction
+)
+
+# Observability (ADR-010): the OpenTelemetry API only -- no LangChain, LangGraph,
+# or FastAPI here, so this module stays framework-neutral. Without a configured
+# provider these calls are no-ops, so query.py remains independently testable and
+# the MCP path is unaffected. Only low-cardinality metadata is ever recorded;
+# the SQL text, parameters, rows, and column values are never attached.
+_tracer = trace.get_tracer(__name__)
+_meter = metrics.get_meter(__name__)
+_sql_executions = _meter.create_counter(
+    "olistiq.sql.executions",
+    unit="{execution}",
+    description="run_sql invocations by outcome.",
+)
+_sql_duration = _meter.create_histogram(
+    "olistiq.sql.duration",
+    unit="s",
+    description="run_sql execution duration by outcome.",
 )
 
 
@@ -210,6 +231,23 @@ def run_sql(
     if timeout_ms < 1:
         raise ValueError("timeout_ms must be >= 1")
 
+    started = time.perf_counter()
+    with _tracer.start_as_current_span("run_sql") as span:
+        result = _execute_run_sql(
+            sql, max_rows=max_rows, timeout_ms=timeout_ms, conn=conn
+        )
+        _record_run_sql(span, sql, result, time.perf_counter() - started)
+        return result
+
+
+def _execute_run_sql(
+    sql: str,
+    *,
+    max_rows: int,
+    timeout_ms: int,
+    conn: Connection | None,
+) -> SqlResult:
+    """Validate then execute one statement; failures stay structured, never raised."""
     error = validate_sql(sql)
     if error is not None:
         return SqlResult(ok=False, error=error)
@@ -225,3 +263,35 @@ def run_sql(
     finally:
         if conn is None and connection is not None:
             connection.close()
+
+
+def _record_run_sql(span, sql: str, result: SqlResult, duration_s: float) -> None:
+    """Record low-cardinality SQL telemetry for one ``run_sql`` call.
+
+    Only structured outcome metadata is attached. The SQL text, parameters, rows,
+    and values are never recorded, and raw database error messages are kept out
+    of spans (only the coarse ``error.kind`` classification is used).
+    """
+    if result.ok:
+        outcome = "ok"
+    elif result.error is not None:
+        outcome = result.error.kind.value
+    else:
+        outcome = SqlErrorKind.UNEXPECTED.value
+
+    span.set_attribute("db.system", "postgresql")
+    span.set_attribute("olistiq.sql.outcome", outcome)
+    span.set_attribute("olistiq.sql.truncated", bool(result.truncated))
+    if result.ok:
+        span.set_attribute("olistiq.sql.row_count", result.row_count)
+        # Only the four read-only statement classes are recorded; a leading "("
+        # (parenthesized query) is not a meaningful operation name.
+        operation = _first_significant_token(sql)
+        if operation in _ALLOWED_LEADING:
+            span.set_attribute("db.operation", operation)
+    else:
+        span.set_status(Status(StatusCode.ERROR))
+
+    attributes = {"outcome": outcome, "truncated": bool(result.truncated)}
+    _sql_executions.add(1, attributes)
+    _sql_duration.record(duration_s, attributes)

@@ -71,6 +71,11 @@ fact.
 # successful query between timeouts does not reset it (ADR-009).
 TIMEOUT_BUDGET = 3
 
+# The terminal node name is shared with the streaming translator (ADR-006) and
+# the observability run-outcome tap (ADR-010); define it once so those modules
+# never duplicate the literal. Renaming the node is a graph change.
+TIMEOUT_STOP_NODE = "timeout_stop"
+
 # Deterministic, grounded terminal answer. It states the observed failure
 # (repeated timeouts) and explicitly refuses to estimate or redefine the
 # requested calculation; it introduces no numbers that could be read as a
@@ -148,7 +153,7 @@ def build_agent(model: BaseChatModel) -> CompiledStateGraph:
     builder = StateGraph(MessagesState)
     builder.add_node("agent", _agent_node(bound_model))
     builder.add_node("tools", ToolNode(list(TOOLS)))
-    builder.add_node("timeout_stop", _timeout_stop_node)
+    builder.add_node(TIMEOUT_STOP_NODE, _timeout_stop_node)
     builder.add_edge(START, "agent")
     builder.add_conditional_edges(
         "agent",
@@ -158,7 +163,7 @@ def build_agent(model: BaseChatModel) -> CompiledStateGraph:
     builder.add_conditional_edges(
         "tools",
         _route_after_tools,
-        {"agent": "agent", "stop": "timeout_stop"},
+        {"agent": "agent", "stop": TIMEOUT_STOP_NODE},
     )
-    builder.add_edge("timeout_stop", END)
+    builder.add_edge(TIMEOUT_STOP_NODE, END)
     return builder.compile()

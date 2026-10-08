@@ -87,8 +87,30 @@ questions over PostgreSQL, answered by an LLM-powered agent.
 - `AGENTS.md` holds the workflow rule; `adr/` holds the actual decisions.
 
 ## CI
-- GitHub Actions runs backend pytest on pushes to main and pull requests.
-- Keep local test commands consistent with the CI workflow.
+- GitHub Actions runs two independent verification jobs on pushes to `main` and
+  pull requests: `backend-tests` (backend) and `frontend-tests` (frontend).
+- Keep local verification commands consistent with `.github/workflows/ci.yml`:
+  backend installs with `uv sync --locked --dev` and runs `uv run pytest`;
+  frontend installs with `npm ci` and runs `npm run lint`, `npm run build`, and
+  `npm test`.
+
+## CI/CD and deployment
+- CI is mandatory verification; a change is not ready until CI passes.
+- CD is deployment automation and must not bypass required CI checks.
+- Do not introduce CD until the manual production deployment path has been
+  successfully verified.
+- Application deployment and infrastructure provisioning are separate concerns.
+- Production secrets and credentials must never be committed.
+- Keep deployment infrastructure proportional to the project's traffic and
+  reliability needs.
+- Prefer managed, scale-to-zero infrastructure when appropriate rather than
+  adding always-on infrastructure without a demonstrated need.
+- Significant deployment architecture decisions must be recorded in an ADR.
+- Introduce Terraform only after the deployed infrastructure is understood and
+  verified.
+- Keep Terraform focused on infrastructure lifecycle, not application data
+  loading.
+- Avoid speculative deployment complexity.
 
 ## MCP usage
 

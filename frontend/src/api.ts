@@ -14,7 +14,23 @@ export type QueryEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-const QUERY_ENDPOINT = '/query'
+const QUERY_PATH = '/query'
+
+/**
+ * Resolve the query endpoint.
+ *
+ * In development no origin is configured, so the relative path is used and the
+ * Vite dev proxy (vite.config.ts) forwards it to the local backend. In
+ * production `VITE_API_ORIGIN` provides an explicit, public API origin (e.g. the
+ * Cloud Run URL); the value is build-time configuration, never a secret. Trailing
+ * slashes are normalized so `https://host/` does not yield `https://host//query`.
+ */
+function queryEndpoint(): string {
+  const origin = (import.meta.env.VITE_API_ORIGIN ?? '')
+    .trim()
+    .replace(/\/+$/, '')
+  return origin === '' ? QUERY_PATH : `${origin}${QUERY_PATH}`
+}
 
 /** Narrow one decoded SSE `data:` payload to a trusted application event. */
 function parseEvent(payload: string): QueryEvent {
@@ -83,7 +99,7 @@ function extractData(frame: string): string | null {
 export async function* streamQuery(
   question: string,
 ): AsyncGenerator<QueryEvent> {
-  const response = await fetch(QUERY_ENDPOINT, {
+  const response = await fetch(queryEndpoint(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -9,11 +9,13 @@ database connections and no agent internals.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import HumanMessage
 from langgraph.errors import GraphRecursionError
@@ -51,9 +53,35 @@ class QueryRequest(BaseModel):
         return value
 
 
+# Production browser -> Cloud Run access control. Exact origins only, supplied
+# by the environment at runtime; never committed and never a wildcard.
+_CORS_ALLOWED_ORIGINS_ENV = "CORS_ALLOWED_ORIGINS"
+
+
 def build_default_agent() -> Any:
     """Build the DeepSeek-backed graph. Called once, at application startup."""
     return build_agent(build_model())
+
+
+def _parse_allowed_origins(raw: str | None) -> list[str]:
+    """Parse a comma-separated list of exact CORS origins.
+
+    Missing, empty, or whitespace-only configuration yields no origins, so the
+    middleware is not installed and current local behavior is preserved. Entries
+    are trimmed and empty ones dropped.
+
+    A wildcard (``*``) anywhere in the configuration is invalid: CORS must be
+    exact-origin, so a wildcard raises ``ValueError`` instead of being silently
+    filtered. This also rejects mixed values such as ``https://host,*``.
+    """
+    if not raw:
+        return []
+    if "*" in raw:
+        raise ValueError(
+            f"{_CORS_ALLOWED_ORIGINS_ENV} must list exact origins and must not "
+            "contain '*'"
+        )
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 def create_app(
@@ -81,6 +109,18 @@ def create_app(
             observability.shutdown()
 
     app = FastAPI(lifespan=lifespan)
+    # CORS is only needed when running cross-origin (browser -> Cloud Run in
+    # production, ADR-011). Without configured origins the middleware is absent
+    # and the same-origin/dev-proxy behavior is unchanged.
+    allowed_origins = _parse_allowed_origins(os.environ.get(_CORS_ALLOWED_ORIGINS_ENV))
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=False,
+            allow_methods=["POST"],
+            allow_headers=["Content-Type"],
+        )
     # Instrument here, not in the lifespan: the ASGI middleware stack is built on
     # first dispatch, so the HTTP server-span boundary must exist before that.
     observability.setup(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from starlette.testclient import TestClient
 
@@ -241,3 +242,70 @@ def test_lifespan_builds_the_default_agent(monkeypatch):
     app = api.create_app()
     with TestClient(app):
         assert app.state.agent is fake
+
+
+# ---------------------------------------------------------------------------
+# CORS (production browser -> Cloud Run, ADR-011)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_allowed_origins():
+    assert api._parse_allowed_origins(None) == []
+    assert api._parse_allowed_origins("") == []
+    assert api._parse_allowed_origins("   ") == []
+    assert api._parse_allowed_origins("https://a.example , https://b.example,") == [
+        "https://a.example",
+        "https://b.example",
+    ]
+
+
+def test_parse_allowed_origins_rejects_wildcard():
+    # '*' is invalid anywhere: alone, mixed with exact origins, or embedded.
+    for raw in ("*", " * ", "https://olistiq.web.app,*", "https://*.example.com"):
+        with pytest.raises(ValueError):
+            api._parse_allowed_origins(raw)
+
+
+def test_no_cors_configuration_adds_no_permissive_headers(monkeypatch):
+    monkeypatch.delenv(api._CORS_ALLOWED_ORIGINS_ENV, raising=False)
+    with TestClient(create_app(agent_factory=lambda: FakeAgent())) as client:
+        response = client.get("/query", headers={"Origin": "https://anywhere.example"})
+
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_allows_configured_origin_preflight(monkeypatch):
+    monkeypatch.setenv(
+        api._CORS_ALLOWED_ORIGINS_ENV,
+        "https://olistiq.web.app , https://custom.example.com",
+    )
+    with TestClient(create_app(agent_factory=lambda: FakeAgent())) as client:
+        response = client.options(
+            "/query",
+            headers={
+                "Origin": "https://olistiq.web.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://olistiq.web.app"
+    assert "POST" in response.headers["access-control-allow-methods"]
+    assert "content-type" in response.headers["access-control-allow-headers"].lower()
+    assert "access-control-allow-credentials" not in response.headers
+
+
+def test_cors_rejects_unconfigured_origin(monkeypatch):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, "https://olistiq.web.app")
+    with TestClient(create_app(agent_factory=lambda: FakeAgent())) as client:
+        response = client.options(
+            "/query",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert "access-control-allow-origin" not in response.headers

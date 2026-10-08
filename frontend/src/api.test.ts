@@ -39,6 +39,7 @@ const DONE = frame('event: done', 'data: {"type":"done"}')
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('streamQuery', () => {
@@ -144,5 +145,47 @@ describe('streamQuery', () => {
   it('throws on EOF without a done or error event', async () => {
     mockFetch(bodyOf([STATUS]))
     await expect(collect(streamQuery('q'))).rejects.toThrow(/without a done or error/)
+  })
+})
+
+describe('query endpoint resolution', () => {
+  /** The first fetch URL used by one streamQuery call. */
+  async function endpointFor(origin?: string): Promise<unknown> {
+    if (origin !== undefined) vi.stubEnv('VITE_API_ORIGIN', origin)
+    const fetchMock = mockFetch(bodyOf([DONE]))
+    await collect(streamQuery('q'))
+    return fetchMock.mock.calls[0][0]
+  }
+
+  it('uses the relative /query path when VITE_API_ORIGIN is unset', async () => {
+    expect(await endpointFor()).toBe('/query')
+  })
+
+  it('uses an explicit API origin when configured', async () => {
+    expect(await endpointFor('https://olistiq.run.app')).toBe(
+      'https://olistiq.run.app/query',
+    )
+  })
+
+  it('normalizes trailing slashes in the configured origin', async () => {
+    expect(await endpointFor('https://olistiq.run.app/')).toBe(
+      'https://olistiq.run.app/query',
+    )
+  })
+
+  it('treats a blank/whitespace origin as unset', async () => {
+    expect(await endpointFor('   ')).toBe('/query')
+  })
+
+  it('keeps the POST + SSE request shape unchanged', async () => {
+    const fetchMock = mockFetch(bodyOf([DONE]))
+    await collect(streamQuery('How many orders?'))
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    })
+    expect(init.body).toBe(JSON.stringify({ question: 'How many orders?' }))
   })
 })

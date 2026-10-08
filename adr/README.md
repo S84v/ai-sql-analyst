@@ -16,6 +16,7 @@ reasoning that would otherwise be lost, not routine implementation details.
 - [ADR-008](ADR-008-agent-evaluation-strategy.md) — Agent evaluation strategy
 - [ADR-009](ADR-009-timeout-budget-termination.md) — Timeout-aware termination in the agent loop
 - [ADR-010](ADR-010-production-observability-boundary.md) — Production observability boundary
+- [ADR-011](ADR-011-gcp-neon-deployment-architecture.md) — Production deployment architecture (GCP + Neon)
 
 ## Conventions
 

@@ -1,0 +1,18 @@
+# Local virtualenvs and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.deepeval/
+
+# Evaluation-only output
+evals/reports/
+
+# Tests and the evaluation suite are not needed to build or run the image
+tests/
+evals/
+
+# Never package environment files (the repo-root .env is outside this context;
+# these patterns are defensive)
+.env
+.env.*

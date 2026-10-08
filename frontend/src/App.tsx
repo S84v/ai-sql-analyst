@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { streamQuery, type QueryEvent } from './api'
 import AnswerReveal from './AnswerReveal'
+import InfoTabs from './components/InfoTabs'
 import './App.css'
 
 type Phase = 'idle' | 'running' | 'complete' | 'error'
@@ -249,52 +250,7 @@ function App() {
         </ul>
       </section>
 
-      {query.phase === 'idle' && (
-        <section className="dataset" aria-labelledby="dataset-title">
-          <h2 id="dataset-title" className="dataset-title">
-            Explore the Olist dataset
-          </h2>
-          <p className="dataset-copy">
-            Olist is a Brazilian e-commerce dataset spanning 2016–2018,
-            covering orders, customers, products, sellers, payments, reviews,
-            and delivery activity — about 99k orders in total.
-          </p>
-          <dl className="dataset-domains">
-            <div className="dataset-domain">
-              <dt>Orders &amp; delivery</dt>
-              <dd>status · purchase date · delivery dates</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Customers &amp; geography</dt>
-              <dd>city · state · ZIP · customer identity</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Products</dt>
-              <dd>category · weight · dimensions · photos</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Order items</dt>
-              <dd>product · seller · price · freight</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Payments</dt>
-              <dd>type · installments · value</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Reviews</dt>
-              <dd>score · comments · review dates</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Sellers</dt>
-              <dd>city · state · ZIP</dd>
-            </div>
-            <div className="dataset-domain">
-              <dt>Geolocation</dt>
-              <dd>ZIP · latitude · longitude</dd>
-            </div>
-          </dl>
-        </section>
-      )}
+      <InfoTabs />
 
       {/* Only the latest status is announced, to avoid re-reading a growing
           log. The visible status below is not a live region. This element stays

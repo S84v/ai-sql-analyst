@@ -1,0 +1,182 @@
+.info-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.info-tablist {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.info-tab {
+  padding: 0.5rem 0.85rem;
+  margin-bottom: -1px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.info-tab:hover {
+  color: var(--text-h);
+}
+
+.info-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.info-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.15rem 0.1rem 0.25rem;
+  animation: info-panel-in 200ms ease-out both;
+}
+
+.info-panel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+
+/* Opacity plus a very small vertical movement; not an accordion. */
+@keyframes info-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.info-copy {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.info-domains {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1.25rem;
+  margin: 0;
+}
+
+.info-domain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--accent-soft);
+}
+
+.info-domain dt {
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.info-domain dd {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.info-flow,
+.info-principles {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.info-flow li,
+.info-principles li {
+  margin: 0.2rem 0;
+}
+
+.info-principles strong {
+  color: var(--text-h);
+}
+
+/* Secondary contact actions: compact outlined pills, clearly subordinate to
+   the filled primary Ask button. All colors come from the shared theme tokens,
+   so the light and dark themes both work without overrides. */
+.info-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.info-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.info-links a:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.info-links a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.info-link-mark {
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.info-links a:hover .info-link-mark {
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .info-domains {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-panel {
+    animation: none;
+  }
+}

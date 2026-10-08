@@ -33,19 +33,24 @@ deterministic Olist metrics (metrics.py)  +  one qualitative DeepEval judge (jud
 
 ## Current baseline
 
-The golden set has **20 cases**. On the current live DeepSeek agent and database
-configuration, **19 of 20 cases pass (95%)**. This is a baseline over a small,
-curated, representative set — not a statistical accuracy claim.
+The golden set has **20 cases**. The latest verified run passed **20/20
+deterministic cases** (0 failed), recorded on **2026-10-08** against code revision
+**`4a713ce`** with the qualitative LLM judge disabled. This is a baseline over a
+small, curated, representative set — not a statistical accuracy claim.
 
 The cases span simple aggregation, filtering, dates/grouping, customer identity,
 multi-table joins, item/payment fanout, translation completeness, review grain,
 SQL error recovery, ambiguity, evidence discipline, truncation, timeout behavior,
 and write/DDL safety.
 
-- **Canonical failure:** the intentionally expensive geolocation query reaches the
-  configured query timeout (and the tool loop can exhaust its bound without
-  producing a final answer). This is a concrete robustness boundary and a known
-  limitation, recorded rather than hidden or averaged away.
+- **Deliberate timeout stress (`expensive_geolocation_join`):** this case runs an
+  intentionally expensive computation (an O(n²) operation over the ~1,000,163-row
+  geolocation table). The computation may still time out — the improvement is not
+  that the query became cheap. ADR-009 introduced a fixed budget of three total
+  SQL timeout failures; once the budget is exhausted the graph terminates through
+  the `timeout_stop` node with a deterministic, non-fabricating answer instead of
+  retrying until the recursion limit. The case passes by respecting the timeout
+  boundary and not fabricating a result.
 - **Exact correctness** is decided only by the deterministic PostgreSQL oracle
   checks. The single limited GEval is qualitative and informational; it does not
   drive pass/fail.
@@ -53,9 +58,9 @@ and write/DDL safety.
   the suite after changing any of them.
 
 Deterministic evaluator regression tests live in
-`backend/tests/test_eval_metrics.py` (**7 tests**, no DeepSeek/PostgreSQL). The
-full backend unit suite runs **120 passed, 24 skipped**; the skipped tests are the
-opt-in live database/model tests.
+`backend/tests/test_eval_metrics.py` (**7 tests**, no DeepSeek/PostgreSQL) and run
+with the normal backend suite. The live database and model tests remain opt-in
+(gated behind environment flags, so they skip by default).
 
 Evaluation is **opt-in and outside normal CI**: `uv sync --group evals` plus a
 live database and `DEEPSEEK_API_KEY` are required, and normal

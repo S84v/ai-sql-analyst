@@ -75,9 +75,27 @@ cp .env.example .env
 | `POSTGRES_HOST` | Database host (defaults to `localhost`). |
 | `POSTGRES_PORT` | Database port (defaults to `5432`). |
 | `DEEPSEEK_API_KEY` | Key for the DeepSeek Responses API model. |
+| `CORS_ALLOWED_ORIGINS` | Optional. Comma-separated, exact browser origins allowed to call the API cross-origin. |
 
 The same `POSTGRES_*` values drive both the Docker container and the
 application.
+
+### CORS
+
+Cross-origin browser access is configured at runtime through
+`CORS_ALLOWED_ORIGINS`, an optional comma-separated list of **exact** origins:
+
+- Entries are trimmed and empty entries are ignored.
+- Missing or blank configuration leaves the CORS middleware disabled, so
+  same-origin and local-dev-proxy behavior is unchanged.
+- A wildcard (`*`, including embedded patterns) is invalid: app construction
+  fails with an error rather than silently allowing all origins.
+- Credentialed CORS is disabled, and the middleware allows the `POST` method and
+  the `Content-Type` request header, matching the `/query` request.
+
+When the production frontend is served from a different origin than the API, that
+frontend origin must be listed explicitly here. In local development the Vite
+proxy makes requests same-origin, so this variable is unnecessary.
 
 ## PostgreSQL
 

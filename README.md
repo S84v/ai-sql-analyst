@@ -46,9 +46,27 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
 
 [View Mermaid source](docs/images/architecture.mmd)
 
+## Production architecture
+
+Deployment is **not** complete; this is the intended production architecture
+(see [ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md)):
+
+```text
+Browser → Firebase Hosting (static React/Vite SPA)
+
+Browser → direct HTTPS/SSE → Cloud Run (FastAPI / LangGraph) → Neon PostgreSQL
+                                                             → DeepSeek API
+```
+
+Firebase Hosting serves only the static assets. The SPA calls the Cloud Run
+service **directly** over HTTPS/SSE — `/query` is not proxied through Hosting — so
+the frontend is built with an explicit API origin and the backend allows that
+origin through CORS.
+
 ## Application request path
 
-1. The React SPA sends a question to `POST /query` (relative URL).
+1. The React SPA sends a question to `POST /query` (`/query` by default, or the
+   configured API origin).
 2. FastAPI validates the request and streams the run over Server-Sent Events.
 3. A compiled LangGraph agent drives a tool loop: it inspects the schema, writes
    SQL, reads results, and retries on errors before answering.
@@ -93,6 +111,10 @@ boundary.
 | DeepSeek model integration via the Responses API | [ADR-005](adr/ADR-005-deepseek-responses-model-integration.md) |
 | Streaming HTTP boundary | [ADR-006](adr/ADR-006-http-streaming-boundary.md) |
 | MCP tool-adapter layer | [ADR-007](adr/ADR-007-mcp-tool-adapter.md) |
+| Agent evaluation strategy | [ADR-008](adr/ADR-008-agent-evaluation-strategy.md) |
+| Timeout-aware termination in the agent loop | [ADR-009](adr/ADR-009-timeout-budget-termination.md) |
+| Production observability boundary | [ADR-010](adr/ADR-010-production-observability-boundary.md) |
+| Production deployment architecture (GCP + Neon) | [ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md) |
 
 In short: the database core is framework-neutral; LangChain and MCP are optional
 adapters at the edges; LangGraph stays provider-neutral; only `model.py` knows
@@ -265,24 +287,25 @@ Frontend:
 
 ```bash
 cd frontend
-npm run build
+npm test
 npm run lint
+npm run build
 ```
 
-The frontend has no automated test runner; the TypeScript build and oxlint are
-the current checks.
+The frontend tests use **Vitest** with `jsdom` and React Testing Library;
+`npm test` runs them. CI runs lint, build, and test in a separate frontend job.
 
 ### Agent evaluation (opt-in)
 
 A **20-case golden evaluation suite** scores the real agent end to end against the
-live database. On the current live DeepSeek baseline, **19/20 cases passed (95%)**.
+live database. On the current live deterministic baseline, **20/20 cases pass**.
 
 - Exact analytical correctness is validated by **deterministic PostgreSQL oracle
   queries**, not by a model.
 - One limited, informational LLM judge covers only subjective answer
   grounding/scope; it does not decide pass/fail.
-- The single known failing case is an intentionally expensive query that reaches
-  the configured timeout — a deliberate robustness boundary, not a hidden result.
+- The intentionally expensive geolocation query is now bounded by the agent's
+  deterministic timeout budget rather than exhausting the tool loop.
 
 The suite is opt-in and not part of CI. See
 [`backend/evals/README.md`](backend/evals/README.md) for the methodology and how
@@ -293,8 +316,9 @@ to run it.
 This is a locally runnable reference implementation, not a deployment:
 
 - No authentication, authorization, or rate limiting.
-- No CORS configuration — development relies on the Vite proxy; production would
-  need same-origin serving or a reverse proxy.
+- Production CORS is configurable at runtime (`CORS_ALLOWED_ORIGINS`);
+  development relies on the Vite proxy. The public frontend API origin is
+  build-time configuration (`VITE_API_ORIGIN`), not a secret.
 - No persistence, checkpointing, conversation memory, or sessions; each request
   is independent.
 - No connection pooling; the database role is the image superuser and
@@ -311,7 +335,7 @@ See the ADRs for the reasoning and the deliberately deferred hardening.
 
 ```text
 ai-sql-analyst/
-├── adr/                  Architecture Decision Records (ADR-001 … ADR-007)
+├── adr/                  Architecture Decision Records (ADR-001 … ADR-011)
 ├── backend/              FastAPI + LangGraph + framework-neutral DB core + MCP
 │   ├── sql/schema.sql    Physical schema and column comments
 │   ├── src/ai_sql_analyst/

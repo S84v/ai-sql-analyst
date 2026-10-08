@@ -31,24 +31,34 @@ backend first.
 | `npm run dev` | Start the Vite dev server. |
 | `npm run build` | Type-check (`tsc -b`) and build for production. |
 | `npm run lint` | Run oxlint. |
+| `npm test` | Run the Vitest suite. |
 | `npm run preview` | Serve the production build locally. |
 
-## Dev proxy
+## API endpoint configuration
 
-The SPA always uses the relative URL `/query`. In development, Vite proxies it to
-the local FastAPI backend, so no CORS configuration is needed:
+The SPA resolves the query endpoint at request time in `src/api.ts`:
 
-```text
-/query → http://127.0.0.1:8000
-```
+- `VITE_API_ORIGIN` is an **optional, public** value supplied at frontend
+  **build time** (Vite exposes only `VITE_`-prefixed variables).
+- Unset, empty, or whitespace-only → the relative `/query` path is used.
+- In local development the relative path is forwarded to the local FastAPI
+  backend by the Vite dev proxy (`/query → http://127.0.0.1:8000`), so no CORS
+  configuration is needed. The proxy is **development-only**.
+- When set, the SPA calls `<VITE_API_ORIGIN>/query`; surrounding whitespace is
+  trimmed and trailing slashes are normalized (`https://host/` →
+  `https://host/query`).
+- `VITE_API_ORIGIN` is configuration, **not a secret**. Never place credentials
+  or API keys in frontend environment variables.
 
-This is a **development-only** arrangement; there is no production hosting or
-CORS setup in this repository.
+In production the static SPA calls the backend directly, so the browser origin
+must be allowed by the backend through CORS (see
+[`backend/README.md`](../backend/README.md)).
 
 ## Transport boundary (`src/api.ts`)
 
-`streamQuery(question)` is an async generator that POSTs to `/query` and parses
-the Server-Sent Events stream. It knows only the application-level protocol, not
+`streamQuery(question)` is an async generator that POSTs to the resolved endpoint
+(`/query` by default, or `<VITE_API_ORIGIN>/query` when configured) and parses the
+Server-Sent Events stream. It knows only the application-level protocol, not
 LangGraph or DeepSeek internals.
 
 Application events:
@@ -107,12 +117,14 @@ already-rendered answer. It never parses incomplete Markdown.
 
 ## Verification
 
-There is **no automated frontend test runner**. The current checks are:
-
 ```bash
-npm run build
-npm run lint
+npm test        # Vitest (jsdom + React Testing Library)
+npm run lint    # oxlint
+npm run build   # tsc -b && vite build
 ```
 
-`build` runs the TypeScript compiler in addition to bundling, so it is the
-primary correctness gate.
+The automated tests use **Vitest** with `jsdom` and React Testing Library
+(`src/api.test.ts`, `src/App.test.tsx`, `src/components/InfoTabs.test.tsx`). CI
+runs the frontend job as `npm ci`, `npm run lint`, `npm run build`, then
+`npm test`. `build` also type-checks via `tsc -b`, so it remains a primary
+correctness gate.

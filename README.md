@@ -48,8 +48,9 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
 
 ## Production architecture
 
-Deployment is **not** complete; this is the intended production architecture
-(see [ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md)):
+The production deployment is **live** — see
+[`docs/deployment.md`](docs/deployment.md). The architecture is recorded in
+[ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md):
 
 ```text
 Browser → Firebase Hosting (static React/Vite SPA)
@@ -313,9 +314,9 @@ to run it.
 
 ## Current limitations and production hardening
 
-This is a locally runnable reference implementation, not a deployment:
+OlistIQ is deployed for production use; the following limitations and hardening
+items remain:
 
-- No authentication, authorization, or rate limiting.
 - Production CORS is configurable at runtime (`CORS_ALLOWED_ORIGINS`);
   development relies on the Vite proxy. The public frontend API origin is
   build-time configuration (`VITE_API_ORIGIN`), not a secret.
@@ -352,3 +353,4 @@ ai-sql-analyst/
 - [`frontend/README.md`](frontend/README.md) — SPA, dev proxy, and transport.
 - [`data/README.md`](data/README.md) — dataset provenance and SQL caveats.
 - [`adr/README.md`](adr/README.md) — architecture decision records.
+- [`docs/deployment.md`](docs/deployment.md) — production deployment runbook.

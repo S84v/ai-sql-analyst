@@ -1,0 +1,111 @@
+name: Deploy frontend
+
+# Component-scoped CD: only frontend/Hosting changes (or a manual dispatch from
+# main) deploy Hosting. Workflow-file paths are intentionally excluded from the
+# trigger so merging a workflow change never deploys production.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "firebase.json"
+      - ".firebaserc"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  deploy:
+    needs: test
+    # Only main may deploy; a dispatch from another branch is refused.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_FRONTEND_SA }}
+
+      - name: Install Firebase CLI (pinned)
+        # Pinned: firebase-tools 15.22.2 had a WIF/ADC auth regression (issue
+        # #10716); deployments must not silently pick up a different version.
+        run: npm install -g firebase-tools@15.33.0
+
+      - name: Firebase ADC preflight (read-only)
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" || { echo "ADC file not exported" >&2; exit 1; }
+          test -f "$GOOGLE_APPLICATION_CREDENTIALS" || { echo "ADC file missing" >&2; exit 1; }
+          # Read-only: proves firebase-tools accepts ADC and can read Hosting.
+          firebase hosting:sites:list --project "$FIREBASE_PROJECT_ID" > /dev/null
+          echo "Preflight OK: firebase-tools accepted ADC and read Hosting metadata."
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Firebase Hosting
+        run: firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID" --non-interactive
+
+      - name: Verify Hosting
+        run: |
+          set -euo pipefail
+          url="https://${FIREBASE_PROJECT_ID}.web.app"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+          [ "$code" = "200" ] || { echo "Hosting returned $code" >&2; exit 1; }
+          echo "Hosting OK: ${url} returned 200"

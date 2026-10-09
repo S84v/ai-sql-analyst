@@ -1,0 +1,184 @@
+name: Deploy backend
+
+# Component-scoped CD: only backend changes (or a manual dispatch from main)
+# deploy the backend. Workflow-file paths are intentionally excluded from the
+# trigger so merging a workflow change never deploys production.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: backend/.python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked --dev
+
+      - name: Run backend tests
+        working-directory: backend
+        run: uv run pytest
+
+  deploy:
+    needs: test
+    # Only main may deploy; a dispatch from another branch is refused.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      AR_IMAGE: ${{ vars.AR_IMAGE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_BACKEND_SA }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Preflight (read-only)
+        run: |
+          set -euo pipefail
+          gcloud auth list --filter=status:ACTIVE --format='value(account)' > /dev/null
+          gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.latestReadyRevisionName)' > /dev/null
+          echo "Preflight OK: federated auth and Cloud Run read access confirmed."
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          # The Dockerfile lives at backend/Dockerfile, so the context is backend/.
+          context: backend
+          push: true
+          tags: ${{ env.AR_IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Deploy image to Cloud Run (image-only update)
+        run: |
+          set -euo pipefail
+          # An image-only update preserves the runtime service account, resources,
+          # scaling, ingress, environment variables, and Secret Manager references.
+          gcloud run services update "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "${AR_IMAGE}@${{ steps.build.outputs.digest }}" \
+            --quiet
+
+      - name: Verify deployed revision and preserved configuration
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          fail() { echo "VERIFY FAILED: $1" >&2; exit 1; }
+          expected_image="${AR_IMAGE}@${EXPECTED_DIGEST}"
+
+          svc=$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --format=json)
+          ready=$(jq -r '.status.latestReadyRevisionName' <<<"$svc")
+
+          jq -e --arg img "$expected_image" \
+            '.spec.template.spec.containers[0].image == $img' <<<"$svc" > /dev/null \
+            || fail "service template image digest mismatch"
+
+          # The image digest must be the one actually serving, i.e. on the latest
+          # ready revision, not merely the desired service template.
+          rev=$(gcloud run revisions describe "$ready" \
+            --project "$PROJECT_ID" --region "$REGION" --format=json)
+          jq -e --arg img "$expected_image" \
+            '.spec.containers[0].image == $img and (.status.imageDigest // $img) == $img' \
+            <<<"$rev" > /dev/null || fail "ready revision image digest mismatch"
+
+          sa=$(jq -r '.spec.template.spec.serviceAccountName' <<<"$svc")
+          [ "$sa" = "olistiq-cloud-run@${PROJECT_ID}.iam.gserviceaccount.com" ] || fail "runtime service account changed"
+
+          jq -e '.spec.template.spec.containers[0].resources.limits.cpu == "1"' <<<"$svc" > /dev/null || fail "CPU changed"
+          jq -e '.spec.template.spec.containers[0].resources.limits.memory == "1Gi"' <<<"$svc" > /dev/null || fail "memory changed"
+          jq -e '.spec.template.spec.containerConcurrency == 5' <<<"$svc" > /dev/null || fail "concurrency changed"
+          jq -e '.spec.template.spec.timeoutSeconds == 300' <<<"$svc" > /dev/null || fail "request timeout changed"
+          jq -e '.metadata.annotations["run.googleapis.com/ingress"] == "all"' <<<"$svc" > /dev/null || fail "ingress changed"
+          jq -e '.spec.template.metadata.annotations["run.googleapis.com/startup-cpu-boost"] == "true"' <<<"$svc" > /dev/null || fail "startup CPU boost changed"
+
+          # Maximum instances: effective service-level limit and retained revision-template value.
+          jq -e '.metadata.annotations["run.googleapis.com/maxScale"] == "3"' <<<"$svc" > /dev/null || fail "service-level max instances changed"
+          jq -e '.spec.template.metadata.annotations["autoscaling.knative.dev/maxScale"] == "20"' <<<"$svc" > /dev/null || fail "revision-template max instances changed"
+
+          # Scale-to-zero: service-level and revision-level min-instances representations.
+          jq -e '(.metadata.annotations["run.googleapis.com/minScale"] // "0") == "0"' <<<"$svc" > /dev/null || fail "service-level min instances not zero"
+          jq -e '(.spec.template.metadata.annotations["autoscaling.knative.dev/minScale"] // "0") == "0"' <<<"$svc" > /dev/null || fail "revision-level min instances not zero"
+
+          # Complete expected environment-variable name set (names only; values never printed).
+          expected_env=$(printf '%s\n' \
+            POSTGRES_DB POSTGRES_USER POSTGRES_HOST POSTGRES_PORT PGSSLMODE \
+            PGCHANNELBINDING PGGSSENCMODE POSTGRES_PASSWORD DEEPSEEK_API_KEY \
+            CORS_ALLOWED_ORIGINS | sort | paste -sd' ' -)
+          actual_env=$(jq -r '[.spec.template.spec.containers[0].env[].name] | sort | join(" ")' <<<"$svc")
+          [ "$actual_env" = "$expected_env" ] || fail "environment variable name set changed: $actual_env"
+
+          # Secret Manager references: names and version keys only (contents never read).
+          jq -e '[.spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD")][0].valueFrom.secretKeyRef | (.name == "neon-db-password" and .key == "1")' <<<"$svc" > /dev/null || fail "POSTGRES_PASSWORD secret reference changed"
+          jq -e '[.spec.template.spec.containers[0].env[] | select(.name == "DEEPSEEK_API_KEY")][0].valueFrom.secretKeyRef | (.name == "deepseek-api-key" and .key == "1")' <<<"$svc" > /dev/null || fail "DEEPSEEK_API_KEY secret reference changed"
+
+          # CORS origin (public configuration, not a secret).
+          jq -e '[.spec.template.spec.containers[0].env[] | select(.name == "CORS_ALLOWED_ORIGINS")][0].value == "https://olistiq-prod-2026.web.app"' <<<"$svc" > /dev/null || fail "CORS origin changed"
+
+          traffic=$(jq -r '.status.traffic[] | select(.percent == 100) | .revisionName' <<<"$svc")
+          [ "$traffic" = "$ready" ] || fail "traffic is not 100% on the ready revision"
+
+          echo "Revision: $ready"
+          echo "Digest:   $EXPECTED_DIGEST"
+          echo "Preserved configuration verified (ready-revision digest, service account, resources, timeout, startup CPU boost, min/max scaling, ingress, env names, secret refs, CORS)."
+
+      - name: Verify CORS preflight (no model invocation)
+        run: |
+          set -euo pipefail
+          api_url="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X OPTIONS \
+            -H "Origin: https://olistiq-prod-2026.web.app" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type" \
+            "${api_url}/query")
+          [ "$code" = "200" ] || { echo "CORS preflight returned $code" >&2; exit 1; }
+          echo "CORS preflight OK: ${api_url}/query returned 200"

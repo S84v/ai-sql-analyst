@@ -5,8 +5,9 @@ state, the verified configuration, and the checks that remain outstanding.
 
 The architecture decision is recorded separately in
 [ADR-011](../adr/ADR-011-gcp-neon-deployment-architecture.md); this runbook
-documents the implementation. Deployment was performed **manually**; GitHub
-Actions CD and Terraform remain deferred (see `AGENTS.md`).
+documents the implementation. The original production deployment was performed
+**manually**; routine releases are now automated by GitHub Actions, while
+Terraform remains deferred (see `AGENTS.md`).
 
 Throughout this document:
 
@@ -147,7 +148,88 @@ or console telemetry settings are configured, so no providers are created.
   service and a single database).
 - The deployment **depends on managed external services** (Google Cloud,
   Firebase, Neon, DeepSeek).
-- **The deployment is manual.** GitHub Actions CD and Terraform are deferred.
+- **Deployment automation:** routine application releases deploy through GitHub
+  Actions (see below); Terraform remains deferred.
+
+## Automated deployment (GitHub Actions)
+
+Routine releases are automated. Pull requests run checks only; production
+deploys happen on pushes to `main` or by a manual dispatch, and **never from pull
+requests**.
+
+The workflow definitions are **implemented**, but operational CD has **not yet
+been verified**: it requires the one-time Workload Identity Federation / GitHub
+configuration below and a successful manual `workflow_dispatch` from `main`
+before routine releases can be treated as verified.
+
+| Workflow | Runs on | Deploys |
+| --- | --- | --- |
+| `ci.yml` | pull requests to `main` | nothing (backend + frontend checks) |
+| `deploy-backend.yml` | push to `main` touching `backend/**`, or manual dispatch | backend image → Cloud Run |
+| `deploy-frontend.yml` | push to `main` touching `frontend/**`, `firebase.json`, or `.firebaserc`, or manual dispatch | static SPA → Firebase Hosting |
+
+Deployment is **component-scoped**: a backend-only change does not redeploy
+Hosting, and a frontend-only change does not create a new backend revision.
+Documentation-only changes deploy nothing. Manual runs are started from `main`
+via **Actions → (workflow) → Run workflow**; a guard refuses deployment from any
+other ref.
+
+### Authentication
+
+Both deploy workflows authenticate with **Workload Identity Federation** — no
+service-account JSON keys and no long-lived tokens are stored in GitHub. Each
+workflow impersonates its own deployment service account, scoped to this
+repository, the `main` branch, and the specific workflow file:
+
+- `github-deploy-backend@olistiq-prod-2026.iam.gserviceaccount.com` — push the
+  image to the `olistiq-backend` Artifact Registry repository, update the
+  `olistiq-api` Cloud Run service, and act as the `olistiq-cloud-run@…` runtime
+  service account.
+- `github-deploy-frontend@olistiq-prod-2026.iam.gserviceaccount.com` — publish to
+  Firebase Hosting.
+
+### One-time prerequisites
+
+Configured once, outside the repository (not part of a deploy):
+
+1. A Workload Identity pool and GitHub OIDC provider scoped to
+   `S84v/ai-sql-analyst` and `refs/heads/main`.
+2. The two deployment service accounts above with least-privilege role bindings
+   (no project Owner/Editor).
+3. Repository Actions **variables** (non-secret): `GCP_PROJECT_ID`,
+   `GCP_REGION`, `GCP_PROJECT_NUMBER`, `GCP_WIF_PROVIDER`, `GCP_BACKEND_SA`,
+   `GCP_FRONTEND_SA`, `CLOUD_RUN_SERVICE`, `AR_IMAGE`, `FIREBASE_PROJECT_ID`.
+
+### Backend deployment
+
+The workflow runs the backend tests, builds the image from `backend/` with Docker
+Buildx, pushes it to Artifact Registry tagged with the commit SHA, and updates
+Cloud Run with an **image-only** change (`gcloud run services update … --image`).
+Deploying by immutable digest keeps the revision traceable to its commit, and the
+image-only update preserves the runtime service account, CPU/memory, concurrency,
+timeout, scaling limits, ingress, environment variables, CORS origin, and Secret
+Manager references. The job fails if any of those drift.
+
+The job then verifies the ready revision, the deployed digest, 100% traffic, the
+preserved settings, and a CORS preflight (`OPTIONS /query`, which does not invoke
+the model). It never calls DeepSeek and never posts to the analytical path.
+
+### Frontend deployment
+
+The workflow runs the frontend checks, builds the SPA, and publishes it to
+Firebase Hosting. The Firebase CLI is pinned (`firebase-tools@15.33.0`, after a
+known WIF/ADC regression in 15.22.2); a read-only preflight confirms ADC
+authentication and Hosting access before publishing, and the Hosting URL is
+checked after. There is intentionally **no fallback** to a long-lived token.
+
+### Rollback
+
+Rollback is manual:
+
+- Backend — shift traffic back to the previous revision:
+  `gcloud run services update-traffic olistiq-api --region=asia-southeast1 --project=olistiq-prod-2026 --to-revisions=<previous-revision>=100`
+- Frontend — open the project's **Hosting release history** in the Firebase
+  Console and select **Roll back** on the desired previous release.
 
 ## References
 

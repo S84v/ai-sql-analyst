@@ -1,0 +1,12 @@
+# Keep the gcloud source upload aligned with the Docker build context
+# (backend/.dockerignore): local-only files the image never uses.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.deepeval/
+evals/reports/
+tests/
+evals/
+.env
+.env.*

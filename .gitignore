@@ -10,3 +10,6 @@ data/raw/*
 
 # Generated evaluation reports (ADR-008)
 backend/evals/reports/
+
+# Firebase CLI local state
+.firebase/

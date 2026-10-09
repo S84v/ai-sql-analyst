@@ -90,7 +90,10 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           # The Dockerfile lives at backend/Dockerfile, so the context is backend/.
+          # Cloud Run runs linux/amd64; record the intended platform explicitly so
+          # the image index contains exactly the target the deployment expects.
           context: backend
+          platforms: linux/amd64
           push: true
           tags: ${{ env.AR_IMAGE }}:${{ github.sha }}
           labels: |
@@ -113,6 +116,9 @@ jobs:
           set -euo pipefail
 
           fail() { echo "VERIFY FAILED: $1" >&2; exit 1; }
+          # Normalize an image reference to its bare digest: strips an optional
+          # repository prefix so both "<repo>@sha256:..." and "sha256:..." work.
+          bare_digest() { local v="$1"; printf '%s' "${v##*@}"; }
           expected_image="${AR_IMAGE}@${EXPECTED_DIGEST}"
 
           svc=$(gcloud run services describe "$SERVICE" \
@@ -123,13 +129,67 @@ jobs:
             '.spec.template.spec.containers[0].image == $img' <<<"$svc" > /dev/null \
             || fail "service template image digest mismatch"
 
-          # The image digest must be the one actually serving, i.e. on the latest
-          # ready revision, not merely the desired service template.
+          # The latest ready revision is what actually serves. Cloud Run stores the
+          # *resolved* image there: when the pushed artifact is an image index
+          # (Buildx provenance/attestations), the resolved digest is the platform
+          # child manifest, which legitimately differs from the pushed index digest
+          # that the service template records. Both representations are normalized
+          # and checked explicitly rather than assumed equal.
           rev=$(gcloud run revisions describe "$ready" \
             --project "$PROJECT_ID" --region "$REGION" --format=json)
-          jq -e --arg img "$expected_image" \
-            '.spec.containers[0].image == $img and (.status.imageDigest // $img) == $img' \
-            <<<"$rev" > /dev/null || fail "ready revision image digest mismatch"
+
+          rev_image=$(jq -r '.spec.containers[0].image // empty' <<<"$rev")
+          [ -n "$rev_image" ] || fail "ready revision ${ready} has no image reference"
+          [ "${rev_image%%@*}" = "$AR_IMAGE" ] || fail "ready revision image is not from the expected repository"
+
+          rev_digest=$(bare_digest "$rev_image")
+          case "$rev_digest" in
+            sha256:*) ;;
+            *) fail "ready revision image has a malformed digest" ;;
+          esac
+
+          status_digest_raw=$(jq -r '.status.imageDigest // empty' <<<"$rev")
+          [ -n "$status_digest_raw" ] || fail "ready revision ${ready} reports no status.imageDigest"
+          case "$status_digest_raw" in
+            *@*) [ "${status_digest_raw%%@*}" = "$AR_IMAGE" ] \
+                   || fail "ready revision status.imageDigest is from a different repository" ;;
+          esac
+          status_digest=$(bare_digest "$status_digest_raw")
+          case "$status_digest" in
+            sha256:*) ;;
+            *) fail "ready revision status.imageDigest has a malformed digest" ;;
+          esac
+
+          [ "$rev_digest" = "$status_digest" ] \
+            || fail "ready revision spec/status image digests disagree"
+
+          if [ "$rev_digest" = "$EXPECTED_DIGEST" ]; then
+            echo "Served digest: ${rev_digest} (exact match to the requested image)"
+          else
+            # Cloud Run resolved the requested image index to a platform child
+            # manifest. Prove the served digest is the linux/amd64 platform
+            # manifest inside the exact index this build pushed - not an
+            # attestation descriptor, not a different architecture, and not
+            # merely an image that exists elsewhere.
+            raw=$(docker buildx imagetools inspect --raw "${AR_IMAGE}@${EXPECTED_DIGEST}" 2>/dev/null) \
+              || fail "could not retrieve the raw manifest for the requested digest ${EXPECTED_DIGEST}"
+            [ -n "$raw" ] || fail "raw manifest for the requested digest ${EXPECTED_DIGEST} is empty"
+            echo "$raw" | jq -e . > /dev/null 2>&1 \
+              || fail "raw manifest for the requested digest ${EXPECTED_DIGEST} is not valid JSON"
+
+            child_count=$(echo "$raw" | jq -r --arg d "$rev_digest" '
+              [ .manifests[]?
+                | select(.digest == $d)
+                | select(.platform.os == "linux")
+                | select(.platform.architecture == "amd64")
+              ] | length' 2>/dev/null) \
+              || fail "could not parse manifest descriptors for the requested digest"
+            [ "$child_count" = "1" ] \
+              || fail "served digest ${rev_digest} is not the linux/amd64 platform manifest of the requested index"
+
+            echo "Requested digest (service template):     ${EXPECTED_DIGEST}"
+            echo "Served digest (resolved platform child): ${rev_digest}"
+          fi
 
           sa=$(jq -r '.spec.template.spec.serviceAccountName' <<<"$svc")
           [ "$sa" = "olistiq-cloud-run@${PROJECT_ID}.iam.gserviceaccount.com" ] || fail "runtime service account changed"

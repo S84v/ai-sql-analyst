@@ -18,6 +18,14 @@ const GITHUB_URL = 'https://github.com/S84v/ai-sql-analyst'
 const LINKEDIN_URL = 'https://www.linkedin.com/in/sarang-dave/'
 const CONTACT_EMAIL = 'davesarang08@gmail.com'
 
+// Prefilled draft for the email link. The body deliberately ends with a
+// trailing space after "because" so the visitor can finish the sentence.
+const EMAIL_SUBJECT = 'About OlistIQ'
+const EMAIL_BODY = 'Hi,\n\nI wanted to reach out about OlistIQ because '
+const EMAIL_URL = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(
+  EMAIL_SUBJECT,
+)}&body=${encodeURIComponent(EMAIL_BODY)}`
+
 function DataPanel() {
   return (
     <>
@@ -120,7 +128,7 @@ function ContactPanel() {
           </a>
         </li>
         <li>
-          <a href={`mailto:${CONTACT_EMAIL}`}>Email</a>
+          <a href={EMAIL_URL}>Email</a>
         </li>
       </ul>
     </>

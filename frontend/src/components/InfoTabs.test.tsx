@@ -133,7 +133,15 @@ describe('InfoTabs', () => {
     expect(linkedin).toHaveAttribute('rel', 'noreferrer')
 
     const email = screen.getByRole('link', { name: 'Email' })
-    expect(email).toHaveAttribute('href', 'mailto:davesarang08@gmail.com')
+    // Parse the mailto URL so assertions are independent of the exact
+    // percent-encoding of the subject and body.
+    const emailUrl = new URL(email.getAttribute('href') ?? '')
+    expect(emailUrl.protocol).toBe('mailto:')
+    expect(emailUrl.pathname).toBe('davesarang08@gmail.com')
+    expect(emailUrl.searchParams.get('subject')).toBe('About OlistIQ')
+    expect(emailUrl.searchParams.get('body')).toBe(
+      'Hi,\n\nI wanted to reach out about OlistIQ because ',
+    )
     expect(email).not.toHaveAttribute('target')
   })
 

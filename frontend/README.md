@@ -98,7 +98,8 @@ already-rendered answer. It never parses incomplete Markdown.
 
 ## User-facing behavior
 
-- The dataset overview is shown only while idle.
+- The information tabs are rendered on the page at all times; the query-result
+  section appears once a run is in progress or has produced an answer or error.
 - Example-question buttons fill the textarea (they never auto-submit) and are
   disabled while a query runs.
 - A single animated status line shows progress; `Ctrl`/`⌘` + `Enter` submits.

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project purpose
-AI SQL Analyst is a full-stack application for asking natural-language analytical
+OlistIQ is a full-stack application for asking natural-language analytical
 questions over PostgreSQL, answered by an LLM-powered agent.
 
 ## Architecture
@@ -15,9 +15,9 @@ questions over PostgreSQL, answered by an LLM-powered agent.
 
 ## Layout and toolchain
 - `backend/` — Python 3.12+ service managed with `uv`, using a `src/` layout
-  (`backend/src/ai_sql_analyst/`, distribution name `ai-sql-analyst`). Entry
-  point is `ai_sql_analyst:main`. Run it from `backend/` with
-  `uv run ai-sql-analyst`.
+  (`backend/src/ai_sql_analyst/`, distribution name `ai-sql-analyst`). Run the
+  API from `backend/` with `uv run uvicorn ai_sql_analyst.api:app`; the MCP
+  server is the console script `ai-sql-analyst-mcp`.
 - `frontend/` — React + TypeScript + Vite SPA managed with `npm`.
 - `data/raw/` — raw input datasets.
 

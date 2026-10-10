@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-ADRs document significant architecture and design decisions for AI SQL Analyst:
+ADRs document significant architecture and design decisions for OlistIQ:
 what was decided, why, and what alternatives were rejected. They capture
 reasoning that would otherwise be lost, not routine implementation details.
 

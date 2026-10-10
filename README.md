@@ -322,8 +322,10 @@ items remain:
   build-time configuration (`VITE_API_ORIGIN`), not a secret.
 - No persistence, checkpointing, conversation memory, or sessions; each request
   is independent.
-- No connection pooling; the database role is the image superuser and
-  least-privilege hardening is not implemented.
+- No connection pooling. Locally, the Docker PostgreSQL role is the image
+  superuser; production uses Neon PostgreSQL ([ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md)).
+  Production role privileges and least-privilege hardening have not been
+  independently verified.
 - MCP is local/stdio only; public hosting and authentication are not implemented.
 - The final answer is delivered after the model's final turn completes, not
   token-by-token.
@@ -342,8 +344,13 @@ ai-sql-analyst/
 │   ├── src/ai_sql_analyst/
 │   └── tests/
 ├── data/                 Dataset provenance, acquisition, and semantics
+├── docs/                 Deployment runbook and diagrams
 ├── frontend/             React + TypeScript + Vite SPA ("OlistIQ")
+├── .github/              CI and CD workflows
+├── AGENTS.md             Engineering and workflow rules
 ├── docker-compose.yml    Local PostgreSQL 16
+├── firebase.json         Firebase Hosting configuration
+├── .firebaserc           Firebase project alias
 └── .env.example          Configuration template
 ```
 

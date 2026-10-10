@@ -28,6 +28,7 @@ All modules live in `src/ai_sql_analyst/`.
 | `model.py` | DeepSeek Responses API model construction (the only provider-specific module). | no (provider edge) |
 | `streaming.py` | Pure translation of LangGraph events into application events. | yes |
 | `api.py` | FastAPI app, request validation, lifespan, SSE endpoint. | no (HTTP edge) |
+| `observability.py` | Opt-in OpenTelemetry instrumentation boundary (tracing, metrics, run-outcome classification); ADR-010. | no (observability edge) |
 | `ingest.py` | Loads the nine Olist CSVs with `COPY FROM STDIN`. | yes |
 | `__init__.py` | Package marker. | — |
 

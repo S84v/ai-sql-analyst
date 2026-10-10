@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useReducer,
   useRef,
   useState,
@@ -119,6 +120,13 @@ function App() {
   const [question, setQuestion] = useState('')
   const [query, dispatch] = useReducer(queryReducer, initialQueryState)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // The result section is only mounted once a query starts; this targets it so
+  // a submission can bring it into view.
+  const resultRef = useRef<HTMLElement>(null)
+  // Set when a submission starts and consumed by the effect below, so the
+  // section is scrolled into view exactly once per submission instead of on
+  // every streamed status/answer update.
+  const shouldScrollToResult = useRef(false)
   // Ref, not state: guards against a double submit within a single tick, before
   // the disabled button can re-render.
   const inFlight = useRef(false)
@@ -126,6 +134,23 @@ function App() {
   const isRunning = query.phase === 'running'
   const canSubmit = question.trim() !== '' && !isRunning
   const showResult = query.error !== null || query.answer !== '' || isRunning
+
+  // Runs after every render, but acts only when a submission has set the flag,
+  // which it clears immediately. This scrolls once per submission no matter how
+  // many re-renders the streamed updates cause.
+  useEffect(() => {
+    if (!shouldScrollToResult.current) return
+    shouldScrollToResult.current = false
+    // Honor the user's motion preference: jump instantly when reduced motion is
+    // requested, scroll smoothly otherwise.
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches
+    resultRef.current?.scrollIntoView({
+      behavior: reduceMotion ? 'instant' : 'smooth',
+      block: 'start',
+    })
+  })
 
   function applyEvent(event: QueryEvent) {
     switch (event.type) {
@@ -149,6 +174,8 @@ function App() {
     // Local validation: never send an empty/whitespace-only question.
     if (trimmed === '' || inFlight.current) return
     inFlight.current = true
+    // The effect scrolls to the result section once it has mounted for this run.
+    shouldScrollToResult.current = true
     dispatch({ type: 'start' })
     try {
       for await (const event of streamQuery(trimmed)) {
@@ -269,7 +296,7 @@ function App() {
       )}
 
       {showResult && (
-        <section className="run-result">
+        <section className="run-result" ref={resultRef}>
           <h2>{query.error ? 'Error' : 'Answer'}</h2>
           {query.error && (
             <div className="error-box" role="alert">

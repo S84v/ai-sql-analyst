@@ -6,6 +6,21 @@ import { streamQuery, type QueryEvent } from './api'
 vi.mock('./api', () => ({ streamQuery: vi.fn() }))
 
 const mockStreamQuery = vi.mocked(streamQuery)
+const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView)
+const matchMedia = vi.mocked(window.matchMedia)
+
+function mediaQueryList(matches: boolean): MediaQueryList {
+  return {
+    matches,
+    media: '(prefers-reduced-motion: reduce)',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } as MediaQueryList
+}
 
 function scripted(events: QueryEvent[]): AsyncGenerator<QueryEvent> {
   return (async function* generate() {
@@ -23,6 +38,11 @@ async function ask(question: string) {
 beforeEach(() => {
   mockStreamQuery.mockReset()
   mockStreamQuery.mockImplementation(() => scripted([{ type: 'done' }]))
+  // Reset the jsdom stubs (see src/test/setup.ts) so call counts and the
+  // reduced-motion preference do not leak between tests.
+  scrollIntoView.mockClear()
+  matchMedia.mockReset()
+  matchMedia.mockReturnValue(mediaQueryList(false))
 })
 
 describe('App', () => {
@@ -189,5 +209,61 @@ describe('App', () => {
     )
     release()
     await screen.findByRole('heading', { name: 'Answer' })
+  })
+
+  it('scrolls to the result section when a query starts', async () => {
+    render(<App />)
+    await ask('How many orders?')
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+    expect(scrollIntoView.mock.instances[0] as HTMLElement).toHaveClass(
+      'run-result',
+    )
+  })
+
+  it('scrolls smoothly by default', async () => {
+    render(<App />)
+    await ask('How many orders?')
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+    expect(scrollIntoView.mock.calls[0][0]).toMatchObject({
+      behavior: 'smooth',
+    })
+  })
+
+  it('does not scroll again on streamed status and answer updates', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mockStreamQuery.mockImplementation(() =>
+      (async function* generate() {
+        yield { type: 'status', message: 'Running analytical query' }
+        yield { type: 'status', message: 'Preparing final answer' }
+        yield { type: 'answer_delta', text: 'There were 95 orders.' }
+        await gate
+        yield { type: 'done' }
+      })(),
+    )
+
+    render(<App />)
+    await ask('How many orders?')
+
+    await screen.findByText('There were 95 orders.')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+    release()
+    await screen.findByRole('heading', { name: 'Answer' })
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses instant scrolling when reduced motion is preferred', async () => {
+    matchMedia.mockReturnValue(mediaQueryList(true))
+
+    render(<App />)
+    await ask('How many orders?')
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+    expect(scrollIntoView.mock.calls[0][0]).toMatchObject({ behavior: 'instant' })
   })
 })

@@ -42,11 +42,17 @@ origin through CORS.
 
 ## Current revision
 
-- Ready revision: **`olistiq-api-00003-ksw`**, receiving **100%** of traffic
-  (latest ready). *(Verified)*
-- Deployed image digest:
-  `sha256:b36cc7c51defbb22b043dcecd568332f0928054c253b4b61c1e024ac4c323c4f`.
+- Ready revision: **`olistiq-api-00005-p6b`**, the latest created and ready
+  revision, healthy and receiving **100%** of traffic. *(Verified)*
+- Requested image — the **image index** digest recorded on the service template:
+  `sha256:e5be36760d3357fe2c0441519629dd23d1487881118c7ea0e7116580244bdcf4`.
   *(Verified)*
+- Served image — the **`linux/amd64` platform-manifest** digest Cloud Run resolved
+  onto the ready revision:
+  `sha256:7da290048a49bc48686d128fa856cfecbf157370fc9ebb93ad4a7869b34fe9d4`.
+  *(Verified)* The two digests differ by design: the first is the multi-manifest
+  image index that was pushed, the second is the platform-specific manifest Cloud
+  Run actually runs; see [Backend deployment](#backend-deployment).
 - Runtime service account:
   `olistiq-cloud-run@olistiq-prod-2026.iam.gserviceaccount.com`. *(Verified)*
 
@@ -102,9 +108,10 @@ non-secret build-time API origin (`VITE_API_ORIGIN`); Hosting does not rewrite
 
 ## Verification performed
 
-- **Build (Historical):** Cloud Build `1765a0b8-9c34-4d7a-a3e6-e79b7f52b8ac`
-  succeeded (2026-10-09, ~22:05–22:06 UTC). It produced the image tagged
-  `c4ec320`, whose digest matches the deployed digest above.
+- **Original manual build (Historical):** Cloud Build
+  `1765a0b8-9c34-4d7a-a3e6-e79b7f52b8ac` succeeded (2026-10-09, ~22:05–22:06 UTC),
+  producing the image tagged `c4ec320`. This predates automated CD and is kept for
+  context only; it is **not** the currently served image.
 - **CORS preflight (Verified):** a live `OPTIONS /query` request returned
   `200`.
 - **SSE request (Verified):** a live `POST /query` request completed with `200`
@@ -157,14 +164,22 @@ Routine releases are automated. Pull requests run checks only; production
 deploys happen on pushes to `main` or by a manual dispatch, and **never from pull
 requests**.
 
-The workflow definitions are **implemented**, but operational CD has **not yet
-been verified**: it requires the one-time Workload Identity Federation / GitHub
-configuration below and a successful manual `workflow_dispatch` from `main`
-before routine releases can be treated as verified.
+The workflows are **implemented and operational**. The following successful
+verification runs confirm both components deploy (all on `main`):
+
+| Run | Trigger | Commit | Result |
+| --- | --- | --- | --- |
+| [Backend deployment #2](https://github.com/S84v/ai-sql-analyst/actions/runs/38006945830) | `workflow_dispatch` | `fa789811f812d7ad5bf5df6c747d8810738b731c` | success (test + deploy jobs) |
+| [Frontend deployment #1](https://github.com/S84v/ai-sql-analyst/actions/runs/38005626855) | `workflow_dispatch` | `47b3b80f3442f7897f36cf0426fe836461ab2338` | success (test + deploy jobs) |
+| [CI #52](https://github.com/S84v/ai-sql-analyst/actions/runs/38006925571) | `push` | `fa789811f812d7ad5bf5df6c747d8810738b731c` | success (backend + frontend checks) |
+
+These are **verification runs, not a complete history of every run**. The one-time
+Workload Identity Federation / GitHub configuration below is required for these
+workflows and is now in place.
 
 | Workflow | Runs on | Deploys |
 | --- | --- | --- |
-| `ci.yml` | pull requests to `main` | nothing (backend + frontend checks) |
+| `ci.yml` | pushes to `main` and pull requests targeting `main` | nothing (backend + frontend checks) |
 | `deploy-backend.yml` | push to `main` touching `backend/**`, or manual dispatch | backend image → Cloud Run |
 | `deploy-frontend.yml` | push to `main` touching `frontend/**`, `firebase.json`, or `.firebaserc`, or manual dispatch | static SPA → Firebase Hosting |
 
@@ -213,6 +228,24 @@ Manager references. The job fails if any of those drift.
 The job then verifies the ready revision, the deployed digest, 100% traffic, the
 preserved settings, and a CORS preflight (`OPTIONS /query`, which does not invoke
 the model). It never calls DeepSeek and never posts to the analytical path.
+
+Buildx pushes an image index containing a runnable `linux/amd64` image
+manifest descriptor and associated attestation manifests. The service
+template records the index digest, while Cloud Run records the resolved
+platform-manifest digest on the ready revision, so the two are expected to
+differ.
+
+For the current revision, the index digest is
+`sha256:e5be36760d3357fe2c0441519629dd23d1487881118c7ea0e7116580244bdcf4`,
+and the resolved platform-manifest digest is
+`sha256:7da290048a49bc48686d128fa856cfecbf157370fc9ebb93ad4a7869b34fe9d4`.
+
+The workflow verifies that the served revision digest matches the runnable
+`linux/amd64` child-manifest descriptor in the exact index pushed by that
+build, excluding attestation descriptors and other architectures. It does
+not accept a digest merely because an image exists elsewhere in the
+repository.
+
 
 ### Frontend deployment
 

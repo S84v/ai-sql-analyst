@@ -145,7 +145,10 @@ class _TempClientIpDiagnosticMiddleware:
         ):
             self._logged = True
             client = scope.get("client")
-            logger.info(
+            # warning, not info: Uvicorn's default logging config does not emit
+            # INFO records from application loggers, so an info record would be
+            # dropped in production. Remove with the rest of the diagnostic.
+            logger.warning(
                 "%s client_host=%r x_forwarded_for=%s method=%s path=%s",
                 _TEMP_DIAGNOSTIC_PREFIX,
                 client[0] if client else None,

@@ -334,7 +334,7 @@ def _diag_messages(caplog) -> list[str]:
 
 def test_client_ip_diagnostic_logs_marked_preflight(monkeypatch, caplog):
     monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
     agent = FakeAgent()
 
     with TestClient(
@@ -357,6 +357,10 @@ def test_client_ip_diagnostic_logs_marked_preflight(monkeypatch, caplog):
 
     messages = _diag_messages(caplog)
     assert len(messages) == 1
+    # Emitted at WARNING so Uvicorn's default logging config outputs it.
+    assert [r.levelno for r in caplog.records if _DIAG_PREFIX in r.getMessage()] == [
+        logging.WARNING
+    ]
     message = messages[0]
     assert "client_host='203.0.113.7'" in message
     assert "method=OPTIONS" in message
@@ -369,7 +373,7 @@ def test_client_ip_diagnostic_logs_marked_preflight(monkeypatch, caplog):
 
 def test_client_ip_diagnostic_logs_every_forwarded_header_value(monkeypatch, caplog):
     monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
     agent = FakeAgent()
 
     with TestClient(create_app(agent_factory=lambda: agent)) as client:
@@ -393,7 +397,7 @@ def test_client_ip_diagnostic_logs_every_forwarded_header_value(monkeypatch, cap
 
 def test_client_ip_diagnostic_ignores_unmarked_requests(monkeypatch, caplog):
     monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
     agent = FakeAgent()
 
     with TestClient(create_app(agent_factory=lambda: agent)) as client:
@@ -421,7 +425,7 @@ def test_client_ip_diagnostic_ignores_unmarked_requests(monkeypatch, caplog):
 
 def test_client_ip_diagnostic_logs_at_most_once_per_app(monkeypatch, caplog):
     monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
     agent = FakeAgent()
 
     with TestClient(create_app(agent_factory=lambda: agent)) as client:

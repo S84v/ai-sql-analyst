@@ -8,6 +8,7 @@ LangGraph v2-shaped events, so the endpoint and the translator both run.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -309,3 +310,148 @@ def test_cors_rejects_unconfigured_origin(monkeypatch):
         )
 
     assert "access-control-allow-origin" not in response.headers
+
+
+# ---------------------------------------------------------------------------
+# TEMPORARY client-IP diagnostic (remove with the api.py diagnostic block)
+#
+# These verify application-level behavior only. They use TestClient, which does
+# not exercise the real Cloud Run network path, so they establish nothing about
+# the deployed client address or proxy headers.
+# ---------------------------------------------------------------------------
+
+_DIAG_ORIGIN = "https://olistiq-prod-2026.web.app"
+_DIAG_PREFIX = "TEMP_CLIENT_IP_DIAGNOSTIC"
+
+
+def _diag_messages(caplog) -> list[str]:
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if _DIAG_PREFIX in record.getMessage()
+    ]
+
+
+def test_client_ip_diagnostic_logs_marked_preflight(monkeypatch, caplog):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
+    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    agent = FakeAgent()
+
+    with TestClient(
+        create_app(agent_factory=lambda: agent), client=("203.0.113.7", 41234)
+    ) as client:
+        response = client.options(
+            "/query?client_ip_diag=1",
+            headers={
+                "Origin": _DIAG_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+                "X-Forwarded-For": "198.51.100.9, 198.51.100.10",
+            },
+        )
+
+    # The preflight still succeeds and the diagnostic never calls the agent.
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == _DIAG_ORIGIN
+    assert agent.calls == 0
+
+    messages = _diag_messages(caplog)
+    assert len(messages) == 1
+    message = messages[0]
+    assert "client_host='203.0.113.7'" in message
+    assert "method=OPTIONS" in message
+    # The path is logged without the query string.
+    assert "path=/query" in message
+    assert "client_ip_diag" not in message
+    assert "198.51.100.9" in message
+    assert "198.51.100.10" in message
+
+
+def test_client_ip_diagnostic_logs_every_forwarded_header_value(monkeypatch, caplog):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
+    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    agent = FakeAgent()
+
+    with TestClient(create_app(agent_factory=lambda: agent)) as client:
+        client.options(
+            "/query?client_ip_diag=1",
+            # Duplicate header lines are preserved and all values are logged.
+            headers=[
+                ("Origin", _DIAG_ORIGIN),
+                ("Access-Control-Request-Method", "POST"),
+                ("X-Forwarded-For", "198.51.100.1"),
+                ("X-Forwarded-For", "198.51.100.2"),
+            ],
+        )
+
+    messages = _diag_messages(caplog)
+    assert len(messages) == 1
+    assert "198.51.100.1" in messages[0]
+    assert "198.51.100.2" in messages[0]
+    assert agent.calls == 0
+
+
+def test_client_ip_diagnostic_ignores_unmarked_requests(monkeypatch, caplog):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
+    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    agent = FakeAgent()
+
+    with TestClient(create_app(agent_factory=lambda: agent)) as client:
+        # Correct preflight but without the marker query parameter.
+        client.options(
+            "/query",
+            headers={
+                "Origin": _DIAG_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        # Marked, but from an origin the diagnostic does not target.
+        client.options(
+            "/query?client_ip_diag=1",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert _diag_messages(caplog) == []
+    assert agent.calls == 0
+
+
+def test_client_ip_diagnostic_logs_at_most_once_per_app(monkeypatch, caplog):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
+    caplog.set_level(logging.INFO, logger="ai_sql_analyst.api")
+    agent = FakeAgent()
+
+    with TestClient(create_app(agent_factory=lambda: agent)) as client:
+        for _ in range(3):
+            client.options(
+                "/query?client_ip_diag=1",
+                headers={
+                    "Origin": _DIAG_ORIGIN,
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+
+    assert len(_diag_messages(caplog)) == 1
+    assert agent.calls == 0
+
+
+def test_client_ip_diagnostic_preserves_cors_preflight(monkeypatch):
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
+    with TestClient(create_app(agent_factory=lambda: FakeAgent())) as client:
+        response = client.options(
+            "/query?client_ip_diag=1",
+            headers={
+                "Origin": _DIAG_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == _DIAG_ORIGIN
+    assert "POST" in response.headers["access-control-allow-methods"]
+    assert "content-type" in response.headers["access-control-allow-headers"].lower()
+    assert "access-control-allow-credentials" not in response.headers

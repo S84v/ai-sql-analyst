@@ -13,6 +13,7 @@ import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,6 +85,77 @@ def _parse_allowed_origins(raw: str | None) -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+# ---------------------------------------------------------------------------
+# TEMPORARY client-IP diagnostic (remove after verifying the deployed path).
+#
+# One logged record per application process, only for a specifically marked,
+# harmless CORS preflight. It records exactly: the application-visible client
+# address, every raw X-Forwarded-For value, and the method/path. It never logs
+# bodies, headers, or configuration, never changes the request or response, and
+# never reaches the agent, model, SQL, or database. Delete this whole block and
+# the single `add_middleware` call in `create_app` to remove it completely.
+# ---------------------------------------------------------------------------
+
+_TEMP_DIAGNOSTIC_PREFIX = "TEMP_CLIENT_IP_DIAGNOSTIC"
+_TEMP_DIAGNOSTIC_ORIGIN = "https://olistiq-prod-2026.web.app"
+
+
+def _temp_diagnostic_header_values(scope: dict[str, Any], name: bytes) -> list[str]:
+    """All values for one header, preserving duplicate header lines."""
+    return [
+        value.decode("latin1")
+        for key, value in scope.get("headers", [])
+        if key == name
+    ]
+
+
+def _is_temp_client_ip_diagnostic(scope: dict[str, Any]) -> bool:
+    """True only for the marked, harmless preflight this diagnostic targets."""
+    if scope.get("method") != "OPTIONS" or scope.get("path") != "/query":
+        return False
+    query = parse_qs(scope.get("query_string", b"").decode("latin1"))
+    if query.get("client_ip_diag") != ["1"]:
+        return False
+    if _TEMP_DIAGNOSTIC_ORIGIN not in _temp_diagnostic_header_values(scope, b"origin"):
+        return False
+    request_methods = _temp_diagnostic_header_values(
+        scope, b"access-control-request-method"
+    )
+    return any(method.upper() == "POST" for method in request_methods)
+
+
+class _TempClientIpDiagnosticMiddleware:
+    """TEMPORARY pure-ASGI pass-through that logs the marked preflight once.
+
+    Registered outside CORS so it observes the request before CORS answers the
+    preflight. As a pass-through it does not alter the request or the streaming
+    response, so normal behavior is unchanged.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+        # One app instance per process in production, so this logs once/process.
+        self._logged = False
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if (
+            scope.get("type") == "http"
+            and not self._logged
+            and _is_temp_client_ip_diagnostic(scope)
+        ):
+            self._logged = True
+            client = scope.get("client")
+            logger.info(
+                "%s client_host=%r x_forwarded_for=%s method=%s path=%s",
+                _TEMP_DIAGNOSTIC_PREFIX,
+                client[0] if client else None,
+                _temp_diagnostic_header_values(scope, b"x-forwarded-for"),
+                scope.get("method"),
+                scope.get("path"),
+            )
+        await self.app(scope, receive, send)
+
+
 def create_app(
     agent_factory: Callable[[], Any] | None = None,
     *,
@@ -121,6 +193,10 @@ def create_app(
             allow_methods=["POST"],
             allow_headers=["Content-Type"],
         )
+    # TEMPORARY diagnostic: added after CORS so it wraps it (middleware added
+    # later is outermost) and observes the marked preflight before CORS answers
+    # it. Remove alongside the diagnostic block above.
+    app.add_middleware(_TempClientIpDiagnosticMiddleware)
     # Instrument here, not in the lifespan: the ASGI middleware stack is built on
     # first dispatch, so the HTTP server-span boundary must exist before that.
     observability.setup(

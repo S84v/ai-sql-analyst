@@ -116,6 +116,7 @@ boundary.
 | Timeout-aware termination in the agent loop | [ADR-009](adr/ADR-009-timeout-budget-termination.md) |
 | Production observability boundary | [ADR-010](adr/ADR-010-production-observability-boundary.md) |
 | Production deployment architecture (GCP + Neon) | [ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md) |
+| Best-effort, process-local rate limiting for `POST /query` | [ADR-012](adr/ADR-012-rate-limiting-guardrail.md) |
 
 In short: the database core is framework-neutral; LangChain and MCP are optional
 adapters at the edges; LangGraph stays provider-neutral; only `model.py` knows
@@ -320,6 +321,13 @@ items remain:
 - Production CORS is configurable at runtime (`CORS_ALLOWED_ORIGINS`);
   development relies on the Vite proxy. The public frontend API origin is
   build-time configuration (`VITE_API_ORIGIN`), not a secret.
+- `POST /query` applies a best-effort, in-memory rate limit: 10 total requests
+  per 60-second fixed window per client key, after which requests receive HTTP
+  `429` with a `Retry-After` header. Counters are process-local and reset on
+  restart, and the effective limit can multiply across Cloud Run instances, so
+  it is not a global quota. The client key is the documented, non-spoof-proof
+  rightmost `X-Forwarded-For` entry. See
+  [ADR-012](adr/ADR-012-rate-limiting-guardrail.md).
 - No persistence, checkpointing, conversation memory, or sessions; each request
   is independent.
 - No connection pooling. Locally, the Docker PostgreSQL role is the image
@@ -338,7 +346,7 @@ See the ADRs for the reasoning and the deliberately deferred hardening.
 
 ```text
 ai-sql-analyst/
-├── adr/                  Architecture Decision Records (ADR-001 … ADR-011)
+├── adr/                  Architecture Decision Records (ADR-001 … ADR-012)
 ├── backend/              FastAPI + LangGraph + framework-neutral DB core + MCP
 │   ├── sql/schema.sql    Physical schema and column comments
 │   ├── src/ai_sql_analyst/

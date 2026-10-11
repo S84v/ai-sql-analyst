@@ -11,8 +11,8 @@ Terraform remains deferred (see `AGENTS.md`).
 
 Throughout this document:
 
-- **Verified** — observed live via read-only `gcloud` inspection during the
-  2026-10-10 audit.
+- **Verified** — observed live via read-only `gcloud` inspection; the resource
+  and configuration values below were re-checked on 2026-10-11.
 - **Historical** — setup context, not part of the current live request path.
 - **Unverified** — could not be independently confirmed read-only.
 
@@ -42,14 +42,14 @@ origin through CORS.
 
 ## Current revision
 
-- Ready revision: **`olistiq-api-00005-p6b`**, the latest created and ready
+- Ready revision: **`olistiq-api-00009-n4v`**, the latest created and ready
   revision, healthy and receiving **100%** of traffic. *(Verified)*
 - Requested image — the **image index** digest recorded on the service template:
-  `sha256:e5be36760d3357fe2c0441519629dd23d1487881118c7ea0e7116580244bdcf4`.
-  *(Verified)*
+  `sha256:539751365a0fc0bfa77880ca73a726ff2e3e84b6e691f922bfccfc4dbdf911df`
+  (the `92b67ad` build, per its Artifact Registry tag). *(Verified)*
 - Served image — the **`linux/amd64` platform-manifest** digest Cloud Run resolved
   onto the ready revision:
-  `sha256:7da290048a49bc48686d128fa856cfecbf157370fc9ebb93ad4a7869b34fe9d4`.
+  `sha256:e24884d2e8ca029513a553842628fb03b15392b52cd4ee8fdf0b6b7e2d0700e8`.
   *(Verified)* The two digests differ by design: the first is the multi-manifest
   image index that was pushed, the second is the platform-specific manifest Cloud
   Run actually runs; see [Backend deployment](#backend-deployment).
@@ -169,6 +169,7 @@ verification runs confirm both components deploy (all on `main`):
 
 | Run | Trigger | Commit | Result |
 | --- | --- | --- | --- |
+| [Backend deployment #6](https://github.com/S84v/ai-sql-analyst/actions/runs/38144160489) | `push` | `92b67ad8a49062fd72d021a73262bc18089c8536` | success (test + deploy jobs) |
 | [Backend deployment #2](https://github.com/S84v/ai-sql-analyst/actions/runs/38006945830) | `workflow_dispatch` | `fa789811f812d7ad5bf5df6c747d8810738b731c` | success (test + deploy jobs) |
 | [Frontend deployment #1](https://github.com/S84v/ai-sql-analyst/actions/runs/38005626855) | `workflow_dispatch` | `47b3b80f3442f7897f36cf0426fe836461ab2338` | success (test + deploy jobs) |
 | [CI #52](https://github.com/S84v/ai-sql-analyst/actions/runs/38006925571) | `push` | `fa789811f812d7ad5bf5df6c747d8810738b731c` | success (backend + frontend checks) |
@@ -235,10 +236,11 @@ template records the index digest, while Cloud Run records the resolved
 platform-manifest digest on the ready revision, so the two are expected to
 differ.
 
-For the current revision, the index digest is
-`sha256:e5be36760d3357fe2c0441519629dd23d1487881118c7ea0e7116580244bdcf4`,
+For the current revision (`olistiq-api-00009-n4v`, the `92b67ad` build), the
+index digest is
+`sha256:539751365a0fc0bfa77880ca73a726ff2e3e84b6e691f922bfccfc4dbdf911df`,
 and the resolved platform-manifest digest is
-`sha256:7da290048a49bc48686d128fa856cfecbf157370fc9ebb93ad4a7869b34fe9d4`.
+`sha256:e24884d2e8ca029513a553842628fb03b15392b52cd4ee8fdf0b6b7e2d0700e8`.
 
 The workflow verifies that the served revision digest matches the runnable
 `linux/amd64` child-manifest descriptor in the exact index pushed by that

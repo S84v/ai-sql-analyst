@@ -29,6 +29,7 @@ All modules live in `src/ai_sql_analyst/`.
 | `streaming.py` | Pure translation of LangGraph events into application events. | yes |
 | `api.py` | FastAPI app, request validation, lifespan, SSE endpoint. | no (HTTP edge) |
 | `observability.py` | Opt-in OpenTelemetry instrumentation boundary (tracing, metrics, run-outcome classification); ADR-010. | no (observability edge) |
+| `ratelimit.py` | In-memory fixed-window per-client rate limiter for `POST /query`; ADR-012. | yes |
 | `ingest.py` | Loads the nine Olist CSVs with `COPY FROM STDIN`. | yes |
 | `__init__.py` | Package marker. | — |
 
@@ -47,8 +48,8 @@ calls the tools, and the tools delegate to the core. Every adapter is thin: it
 performs no validation, opens no connection of its own, and only forwards the
 core's `to_dict()` result.
 
-- `query.py` and `schema.py` have no framework dependencies (no LangChain,
-  LangGraph, MCP, or FastAPI).
+- `query.py`, `schema.py`, and `ratelimit.py` have no framework dependencies (no
+  LangChain, LangGraph, MCP, or FastAPI).
 - `tools.py`, `mcp_server.py`, `agent.py`, `model.py`, and `api.py` are edges.
 - Only `model.py` knows DeepSeek; `agent.py` receives a `BaseChatModel`.
 - The MCP adapter does not route through LangGraph or FastAPI.
@@ -155,6 +156,48 @@ uv run ai-sql-analyst-mcp
 ```
 
 stdout belongs to the MCP protocol; the server must not write diagnostics there.
+
+## Rate limiting
+
+`POST /query` is guarded by a best-effort, process-local rate limiter (ADR-012),
+applied as a route dependency **before** the agent runs or the SSE stream starts:
+
+- **Policy.** 10 total requests per 60-second fixed window per client key; the
+  first request opens the window. Excess requests receive HTTP `429` with a
+  `Retry-After` header (whole seconds until the window resets).
+- **Client key.** The rightmost entry of the received `X-Forwarded-For` chain,
+  validated with the standard-library `ipaddress` module. Earlier entries are
+  treated as attacker-influenced; if the rightmost entry is missing or malformed,
+  all such requests share a single `unknown` key. The limiter never falls back to
+  `request.client.host` and never fails open.
+- **Scope.** One limiter instance per process, held in memory. It is **not** a
+  global quota and not a robust security boundary: counters reset on restart and
+  each instance counts separately, so the effective limit can multiply across
+  instances. The `X-Forwarded-For` assumption is documented and not spoof-proof —
+  it blunts casual abuse, not determined attackers.
+- CORS preflight (`OPTIONS /query`) is handled by the CORS middleware and is not
+  rate-limited.
+
+The limiter uses only the standard library; it adds no dependencies, external
+services, or configuration. See
+[ADR-012](../adr/ADR-012-rate-limiting-guardrail.md) for the decision and its
+limitations.
+
+## Observability (opt-in)
+
+OpenTelemetry instrumentation (ADR-010) is **off by default and fully inert**:
+with no exporter configured, no providers are created and nothing is exported.
+The supported environment variables are:
+
+| Variable | Purpose |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Export traces and metrics over OTLP/HTTP to this endpoint. |
+| `OTEL_SERVICE_NAME` | Service-name resource attribute (defaults to `olistiq`). |
+| `OLISTIQ_OTEL_CONSOLE` | Set to `1` to export to a stderr console exporter instead of OTLP (local debugging). |
+
+Message content capture is pinned to `NO_CONTENT`; prompts, completions,
+reasoning, tool arguments/results, and database content are never recorded.
+Production currently sets none of these variables, so telemetry is inert there.
 
 ## Tests
 

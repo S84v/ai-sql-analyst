@@ -100,6 +100,10 @@ already-rendered answer. It never parses incomplete Markdown.
 
 - The information tabs are rendered on the page at all times; the query-result
   section appears once a run is in progress or has produced an answer or error.
+- Submitting a question scrolls the query-result section into view once per
+  submission — smoothly, or instantly when the user prefers reduced motion.
+- The Contact tab opens an editable email draft (subject `About OlistIQ` with a
+  short prefilled body) alongside the GitHub and LinkedIn links.
 - Example-question buttons fill the textarea (they never auto-submit) and are
   disabled while a query runs.
 - A single animated status line shows progress; `Ctrl`/`⌘` + `Enter` submits.

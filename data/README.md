@@ -69,7 +69,9 @@ Then load them into PostgreSQL; see the
 - Approximately 99,441 orders (~99k).
 - Coverage spans approximately 2016–2018.
 
-Verified row counts after ingestion:
+Verified local row counts after ingestion (local PostgreSQL 16; production Neon
+uses the same schema and source data, but its counts are not independently
+re-verified here):
 
 | Table | Rows |
 | --- | ---: |

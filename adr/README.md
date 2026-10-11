@@ -17,6 +17,7 @@ reasoning that would otherwise be lost, not routine implementation details.
 - [ADR-009](ADR-009-timeout-budget-termination.md) — Timeout-aware termination in the agent loop
 - [ADR-010](ADR-010-production-observability-boundary.md) — Production observability boundary
 - [ADR-011](ADR-011-gcp-neon-deployment-architecture.md) — Production deployment architecture (GCP + Neon)
+- [ADR-012](ADR-012-rate-limiting-guardrail.md) — Best-effort, process-local rate limiting for `POST /query`
 
 ## Conventions
 

@@ -13,9 +13,8 @@ import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
-from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import HumanMessage
@@ -26,6 +25,10 @@ from pydantic import BaseModel, Field, field_validator
 from ai_sql_analyst import observability
 from ai_sql_analyst.agent import build_agent
 from ai_sql_analyst.model import build_model
+from ai_sql_analyst.ratelimit import (
+    FixedWindowRateLimiter,
+    client_key_from_forwarded_for,
+)
 from ai_sql_analyst.streaming import translate_agent_events
 
 logger = logging.getLogger(__name__)
@@ -85,92 +88,21 @@ def _parse_allowed_origins(raw: str | None) -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
-# ---------------------------------------------------------------------------
-# TEMPORARY client-IP diagnostic (remove after verifying the deployed path).
-#
-# One logged record per application process, only for a specifically marked,
-# harmless CORS preflight. It records exactly: the application-visible client
-# address, every raw X-Forwarded-For value, and the method/path. It never logs
-# bodies, headers, or configuration, never changes the request or response, and
-# never reaches the agent, model, SQL, or database. Delete this whole block and
-# the single `add_middleware` call in `create_app` to remove it completely.
-# ---------------------------------------------------------------------------
-
-_TEMP_DIAGNOSTIC_PREFIX = "TEMP_CLIENT_IP_DIAGNOSTIC"
-_TEMP_DIAGNOSTIC_ORIGIN = "https://olistiq-prod-2026.web.app"
-
-
-def _temp_diagnostic_header_values(scope: dict[str, Any], name: bytes) -> list[str]:
-    """All values for one header, preserving duplicate header lines."""
-    return [
-        value.decode("latin1")
-        for key, value in scope.get("headers", [])
-        if key == name
-    ]
-
-
-def _is_temp_client_ip_diagnostic(scope: dict[str, Any]) -> bool:
-    """True only for the marked, harmless preflight this diagnostic targets."""
-    if scope.get("method") != "OPTIONS" or scope.get("path") != "/query":
-        return False
-    query = parse_qs(scope.get("query_string", b"").decode("latin1"))
-    if query.get("client_ip_diag") != ["1"]:
-        return False
-    if _TEMP_DIAGNOSTIC_ORIGIN not in _temp_diagnostic_header_values(scope, b"origin"):
-        return False
-    request_methods = _temp_diagnostic_header_values(
-        scope, b"access-control-request-method"
-    )
-    return any(method.upper() == "POST" for method in request_methods)
-
-
-class _TempClientIpDiagnosticMiddleware:
-    """TEMPORARY pure-ASGI pass-through that logs the marked preflight once.
-
-    Registered outside CORS so it observes the request before CORS answers the
-    preflight. As a pass-through it does not alter the request or the streaming
-    response, so normal behavior is unchanged.
-    """
-
-    def __init__(self, app: Any) -> None:
-        self.app = app
-        # One app instance per process in production, so this logs once/process.
-        self._logged = False
-
-    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if (
-            scope.get("type") == "http"
-            and not self._logged
-            and _is_temp_client_ip_diagnostic(scope)
-        ):
-            self._logged = True
-            client = scope.get("client")
-            # warning, not info: Uvicorn's default logging config does not emit
-            # INFO records from application loggers, so an info record would be
-            # dropped in production. Remove with the rest of the diagnostic.
-            logger.warning(
-                "%s client_host=%r x_forwarded_for=%s method=%s path=%s",
-                _TEMP_DIAGNOSTIC_PREFIX,
-                client[0] if client else None,
-                _temp_diagnostic_header_values(scope, b"x-forwarded-for"),
-                scope.get("method"),
-                scope.get("path"),
-            )
-        await self.app(scope, receive, send)
-
-
 def create_app(
     agent_factory: Callable[[], Any] | None = None,
     *,
     tracer_provider: Any | None = None,
     meter_provider: Any | None = None,
+    rate_limiter: FixedWindowRateLimiter | None = None,
 ) -> FastAPI:
     """Create the FastAPI app.
 
     ``agent_factory`` is injectable so tests can supply a deterministic fake
     agent without a DeepSeek key or a database. ``tracer_provider`` and
     ``meter_provider`` let tests inject in-memory OpenTelemetry providers
-    (ADR-010); production configures them from the environment.
+    (ADR-010); production configures them from the environment. ``rate_limiter``
+    defaults to a fresh process-local limiter (ADR-012) and is injectable so
+    tests can supply a deterministic clock.
     """
     factory = agent_factory or build_default_agent
 
@@ -196,17 +128,38 @@ def create_app(
             allow_methods=["POST"],
             allow_headers=["Content-Type"],
         )
-    # TEMPORARY diagnostic: added after CORS so it wraps it (middleware added
-    # later is outermost) and observes the marked preflight before CORS answers
-    # it. Remove alongside the diagnostic block above.
-    app.add_middleware(_TempClientIpDiagnosticMiddleware)
+    # One limiter per application process (ADR-012). Best-effort and
+    # process-local; injectable for deterministic tests. Use an explicit None
+    # check: an empty limiter is falsy because it defines __len__.
+    limiter = rate_limiter if rate_limiter is not None else FixedWindowRateLimiter()
+
+    async def enforce_rate_limit(request: Request) -> None:
+        """Reject with 429 when the client's fixed window is exhausted.
+
+        Runs as a route dependency, so a rejected request never reaches the
+        endpoint body and therefore never invokes the agent or the SSE stream.
+        """
+        decision = limiter.check(
+            client_key_from_forwarded_for(request.headers.getlist("x-forwarded-for"))
+        )
+        if not decision.allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Please try again shortly.",
+                headers={"Retry-After": str(decision.retry_after)},
+            )
+
     # Instrument here, not in the lifespan: the ASGI middleware stack is built on
     # first dispatch, so the HTTP server-span boundary must exist before that.
     observability.setup(
         app, tracer_provider=tracer_provider, meter_provider=meter_provider
     )
 
-    @app.post("/query", response_class=EventSourceResponse)
+    @app.post(
+        "/query",
+        response_class=EventSourceResponse,
+        dependencies=[Depends(enforce_rate_limit)],
+    )
     async def query(request: Request, req: QueryRequest) -> AsyncIterator[ServerSentEvent]:
         agent = request.app.state.agent
         span = trace.get_current_span()

@@ -8,7 +8,6 @@ LangGraph v2-shaped events, so the endpoint and the translator both run.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 import pytest
@@ -17,6 +16,7 @@ from starlette.testclient import TestClient
 
 from ai_sql_analyst import api
 from ai_sql_analyst.api import create_app
+from ai_sql_analyst.ratelimit import FixedWindowRateLimiter
 
 
 class FakeAgent:
@@ -313,149 +313,108 @@ def test_cors_rejects_unconfigured_origin(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# TEMPORARY client-IP diagnostic (remove with the api.py diagnostic block)
+# Rate limiting (ADR-012)
 #
-# These verify application-level behavior only. They use TestClient, which does
-# not exercise the real Cloud Run network path, so they establish nothing about
-# the deployed client address or proxy headers.
+# The limiter is process-local and keyed on the rightmost X-Forwarded-For entry.
+# These tests drive it through the HTTP boundary with TestClient.
 # ---------------------------------------------------------------------------
 
-_DIAG_ORIGIN = "https://olistiq-prod-2026.web.app"
-_DIAG_PREFIX = "TEMP_CLIENT_IP_DIAGNOSTIC"
+
+class _Clock:
+    """Deterministic monotonic clock for limiter tests."""
+
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
-def _diag_messages(caplog) -> list[str]:
-    return [
-        record.getMessage()
-        for record in caplog.records
-        if _DIAG_PREFIX in record.getMessage()
-    ]
+def _post(client: TestClient, forwarded_for: str | None = None):
+    headers = {"X-Forwarded-For": forwarded_for} if forwarded_for else {}
+    return client.post("/query", json={"question": "How many orders?"}, headers=headers)
 
 
-def test_client_ip_diagnostic_logs_marked_preflight(monkeypatch, caplog):
-    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
-    agent = FakeAgent()
-
-    with TestClient(
-        create_app(agent_factory=lambda: agent), client=("203.0.113.7", 41234)
-    ) as client:
-        response = client.options(
-            "/query?client_ip_diag=1",
-            headers={
-                "Origin": _DIAG_ORIGIN,
-                "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type",
-                "X-Forwarded-For": "198.51.100.9, 198.51.100.10",
-            },
-        )
-
-    # The preflight still succeeds and the diagnostic never calls the agent.
-    assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == _DIAG_ORIGIN
-    assert agent.calls == 0
-
-    messages = _diag_messages(caplog)
-    assert len(messages) == 1
-    # Emitted at WARNING so Uvicorn's default logging config outputs it.
-    assert [r.levelno for r in caplog.records if _DIAG_PREFIX in r.getMessage()] == [
-        logging.WARNING
-    ]
-    message = messages[0]
-    assert "client_host='203.0.113.7'" in message
-    assert "method=OPTIONS" in message
-    # The path is logged without the query string.
-    assert "path=/query" in message
-    assert "client_ip_diag" not in message
-    assert "198.51.100.9" in message
-    assert "198.51.100.10" in message
-
-
-def test_client_ip_diagnostic_logs_every_forwarded_header_value(monkeypatch, caplog):
-    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
-    agent = FakeAgent()
-
+def test_rate_limit_allows_ten_then_rejects():
+    agent = FakeAgent(_answer_events())
     with TestClient(create_app(agent_factory=lambda: agent)) as client:
-        client.options(
-            "/query?client_ip_diag=1",
-            # Duplicate header lines are preserved and all values are logged.
-            headers=[
-                ("Origin", _DIAG_ORIGIN),
-                ("Access-Control-Request-Method", "POST"),
-                ("X-Forwarded-For", "198.51.100.1"),
-                ("X-Forwarded-For", "198.51.100.2"),
-            ],
-        )
+        allowed = [_post(client, "203.0.113.5").status_code for _ in range(10)]
+        rejected = _post(client, "203.0.113.5")
 
-    messages = _diag_messages(caplog)
-    assert len(messages) == 1
-    assert "198.51.100.1" in messages[0]
-    assert "198.51.100.2" in messages[0]
-    assert agent.calls == 0
+    assert allowed == [200] * 10
+    assert rejected.status_code == 429
+    # The rejected request never invoked the agent.
+    assert agent.calls == 10
 
 
-def test_client_ip_diagnostic_ignores_unmarked_requests(monkeypatch, caplog):
-    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
-    agent = FakeAgent()
+def test_rate_limit_retry_after_reflects_window_reset():
+    clock = _Clock()
+    limiter = FixedWindowRateLimiter(clock=clock)
+    agent = FakeAgent(_answer_events())
+    app = create_app(agent_factory=lambda: agent, rate_limiter=limiter)
+    with TestClient(app) as client:
+        for _ in range(10):
+            _post(client, "203.0.113.5")
+        clock.advance(25)
+        response = _post(client, "203.0.113.5")
 
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "35"
+
+
+def test_rate_limit_has_independent_counters_per_key():
+    agent = FakeAgent(_answer_events())
     with TestClient(create_app(agent_factory=lambda: agent)) as client:
-        # Correct preflight but without the marker query parameter.
-        client.options(
+        for _ in range(10):
+            assert _post(client, "203.0.113.5").status_code == 200
+        # A different client still has its full budget.
+        assert _post(client, "198.51.100.9").status_code == 200
+        # The exhausted client remains rejected.
+        assert _post(client, "203.0.113.5").status_code == 429
+
+    assert agent.calls == 11
+
+
+def test_rate_limit_429_keeps_cors_headers(monkeypatch):
+    origin = "https://olistiq-prod-2026.web.app"
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, origin)
+    agent = FakeAgent(_answer_events())
+    with TestClient(create_app(agent_factory=lambda: agent)) as client:
+        for _ in range(10):
+            client.post(
+                "/query",
+                json={"question": "q"},
+                headers={"X-Forwarded-For": "203.0.113.5", "Origin": origin},
+            )
+        response = client.post(
             "/query",
-            headers={
-                "Origin": _DIAG_ORIGIN,
-                "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type",
-            },
-        )
-        # Marked, but from an origin the diagnostic does not target.
-        client.options(
-            "/query?client_ip_diag=1",
-            headers={
-                "Origin": "https://evil.example",
-                "Access-Control-Request-Method": "POST",
-            },
+            json={"question": "q"},
+            headers={"X-Forwarded-For": "203.0.113.5", "Origin": origin},
         )
 
-    assert _diag_messages(caplog) == []
-    assert agent.calls == 0
+    assert response.status_code == 429
+    assert response.headers["access-control-allow-origin"] == origin
 
 
-def test_client_ip_diagnostic_logs_at_most_once_per_app(monkeypatch, caplog):
-    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    caplog.set_level(logging.WARNING, logger="ai_sql_analyst.api")
-    agent = FakeAgent()
-
+def test_rate_limit_does_not_apply_to_preflight(monkeypatch):
+    origin = "https://olistiq-prod-2026.web.app"
+    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, origin)
+    agent = FakeAgent(_answer_events())
     with TestClient(create_app(agent_factory=lambda: agent)) as client:
-        for _ in range(3):
-            client.options(
-                "/query?client_ip_diag=1",
+        for _ in range(15):
+            preflight = client.options(
+                "/query",
                 headers={
-                    "Origin": _DIAG_ORIGIN,
+                    "Origin": origin,
                     "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type",
                 },
             )
+            assert preflight.status_code == 200
+        # The preflights did not consume the POST budget.
+        assert _post(client, "203.0.113.5").status_code == 200
 
-    assert len(_diag_messages(caplog)) == 1
-    assert agent.calls == 0
-
-
-def test_client_ip_diagnostic_preserves_cors_preflight(monkeypatch):
-    monkeypatch.setenv(api._CORS_ALLOWED_ORIGINS_ENV, _DIAG_ORIGIN)
-    with TestClient(create_app(agent_factory=lambda: FakeAgent())) as client:
-        response = client.options(
-            "/query?client_ip_diag=1",
-            headers={
-                "Origin": _DIAG_ORIGIN,
-                "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type",
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == _DIAG_ORIGIN
-    assert "POST" in response.headers["access-control-allow-methods"]
-    assert "content-type" in response.headers["access-control-allow-headers"].lower()
-    assert "access-control-allow-credentials" not in response.headers
+    assert agent.calls == 1

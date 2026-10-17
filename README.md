@@ -378,7 +378,6 @@ ai-sql-analyst/
 - [`docs/deployment.md`](docs/deployment.md) — production deployment runbook.
 
 ## Contact
-
-- GitHub — <https://github.com/S84v/ai-sql-analyst>
 - LinkedIn — <https://www.linkedin.com/in/sarang-dave/>
+- GitHub — <https://github.com/S84v>
 - Email — <davesarang08@gmail.com>

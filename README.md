@@ -7,6 +7,14 @@
   <p><em>Ask questions in plain English. Get answers grounded in data.</em></p>
 
   <p>
+    <strong><a href="https://olistiq-prod-2026.web.app/">▶ Live demo</a></strong>
+    &nbsp;·&nbsp;
+    <a href="#architecture">Architecture</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/S84v/ai-sql-analyst/actions/workflows/ci.yml">CI</a>
+  </p>
+
+  <p>
     <a href="https://github.com/S84v/ai-sql-analyst/actions/workflows/ci.yml">
       <img src="https://img.shields.io/github/actions/workflow/status/S84v/ai-sql-analyst/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI">
     </a>
@@ -20,19 +28,16 @@
 
 </div>
 
-OlistIQ turns a natural-language analytical question into a grounded answer: an LLM
-agent inspects the live PostgreSQL schema, proposes SQL, and the application
-validates and executes that SQL read-only before answering from the returned
-rows.
-
 ![OlistIQ demo](docs/images/olist-front-page.gif)
 
-## What it is
+## Overview
 
-OlistIQ is a production-oriented reference implementation of an LLM analytics
-agent over a real relational dataset — the
+OlistIQ turns a natural-language analytical question into a grounded answer: an LLM
+agent inspects the live PostgreSQL schema, proposes SQL, and the application
+executes that SQL read-only before answering from the returned rows.
+
+It is a production-oriented reference implementation over the
 [Olist Brazilian E-Commerce Public Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce).
-
 The interesting part is not text-to-SQL alone, but the boundaries around it:
 
 - Generated SQL is treated as **untrusted input**.
@@ -40,57 +45,19 @@ The interesting part is not text-to-SQL alone, but the boundaries around it:
 - The agent graph is **provider-neutral**; DeepSeek specifics live in one module.
 - Every integration (HTTP/SSE, MCP) is a **thin adapter** over a framework-neutral core.
 
-## Architecture
+## Example
 
-<img src="docs/images/architecture.svg" alt="OlistIQ architecture" width="700">
+> **Question:** How many orders are there in the database?
+>
+> **Answer:** There are **99,441 orders** in the database.
 
-[View Mermaid source](docs/images/architecture.mmd)
+In a local run verified against the repository's dataset, OlistIQ inspected the
+schema, ran a read-only SQL query, and returned the answer above. The frontend shows
+the question, progress, and final answer — not the generated SQL.
 
-## Production architecture
-
-The production deployment is **live** — see
-[`docs/deployment.md`](docs/deployment.md). The architecture is recorded in
-[ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md):
-
-```text
-Browser → Firebase Hosting (static React/Vite SPA)
-
-Browser → direct HTTPS/SSE → Cloud Run (FastAPI / LangGraph) → Neon PostgreSQL
-                                                             → DeepSeek API
-```
-
-Firebase Hosting serves only the static assets. The SPA calls the Cloud Run
-service **directly** over HTTPS/SSE — `/query` is not proxied through Hosting — so
-the frontend is built with an explicit API origin and the backend allows that
-origin through CORS.
-
-## Application request path
-
-1. The React SPA sends a question to `POST /query` (`/query` by default, or the
-   configured API origin).
-2. FastAPI validates the request and streams the run over Server-Sent Events.
-3. A compiled LangGraph agent drives a tool loop: it inspects the schema, writes
-   SQL, reads results, and retries on errors before answering.
-4. LangChain binds the two read-only tools; the tools delegate to the
-   framework-neutral database core.
-5. PostgreSQL executes each query in a read-only transaction.
-
-## MCP path
-
-```text
-MCP client
-    ↓
-mcp_server.py
-    ↓
-schema.py / query.py
-    ↓
-PostgreSQL
-```
-
-The MCP server is an **additional edge adapter**, not a replacement for the
-application path. It does not route through FastAPI or LangGraph. It exposes the
-same two database capabilities as plain MCP tools and inherits the same safety
-boundary.
+The same question is the `orders_total_count` case in the golden evaluation suite,
+which validates the expected count with the deterministic PostgreSQL oracle
+`SELECT count(*) FROM orders`.
 
 ## Core capabilities
 
@@ -101,59 +68,87 @@ boundary.
 - **Markdown / GFM answers**, including tables.
 - **MCP tools** (`get_schema`, `run_readonly_sql`) for local MCP clients.
 
-## Key engineering decisions
+## Architecture
 
-| Decision | ADR |
-| --- | --- |
-| Dynamic, catalog-based schema introspection | [ADR-001](adr/ADR-001-dynamic-schema-introspection.md) |
-| Read-only SQL execution boundary | [ADR-002](adr/ADR-002-read-only-sql-execution-boundary.md) |
-| LangChain tool-adapter layer | [ADR-003](adr/ADR-003-langchain-tool-adapter.md) |
-| LangGraph agent boundary | [ADR-004](adr/ADR-004-langgraph-agent-boundary.md) |
-| DeepSeek model integration via the Responses API | [ADR-005](adr/ADR-005-deepseek-responses-model-integration.md) |
-| Streaming HTTP boundary | [ADR-006](adr/ADR-006-http-streaming-boundary.md) |
-| MCP tool-adapter layer | [ADR-007](adr/ADR-007-mcp-tool-adapter.md) |
-| Agent evaluation strategy | [ADR-008](adr/ADR-008-agent-evaluation-strategy.md) |
-| Timeout-aware termination in the agent loop | [ADR-009](adr/ADR-009-timeout-budget-termination.md) |
-| Production observability boundary | [ADR-010](adr/ADR-010-production-observability-boundary.md) |
-| Production deployment architecture (GCP + Neon) | [ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md) |
-| Best-effort, process-local rate limiting for `POST /query` | [ADR-012](adr/ADR-012-rate-limiting-guardrail.md) |
+<img src="docs/images/architecture.svg" alt="OlistIQ architecture" width="700">
 
-In short: the database core is framework-neutral; LangChain and MCP are optional
-adapters at the edges; LangGraph stays provider-neutral; only `model.py` knows
-DeepSeek; the HTTP boundary owns validation and transport, not SQL.
+[View Mermaid source](docs/images/architecture.mmd)
+
+The core is framework-neutral: `schema.py` introspects PostgreSQL, `query.py`
+executes generated SQL read-only, and the LangChain tools, LangGraph agent,
+FastAPI/SSE API, and MCP server are thin edges over it. A question travels:
+
+1. The React SPA sends it to `POST /query`.
+2. FastAPI validates the request and streams the run over Server-Sent Events.
+3. A compiled LangGraph agent inspects the schema, writes SQL, reads results, and
+   retries on execution errors before answering.
+4. PostgreSQL executes each query in a read-only transaction.
+
+**Production.** Firebase Hosting serves the static SPA; the browser calls Cloud Run
+directly over HTTPS/SSE (`/query` is not proxied through Hosting). Cloud Run runs
+the FastAPI service and reaches Neon PostgreSQL 16 and the DeepSeek API. CORS is
+scoped to the deployed frontend origin. See
+[ADR-011](adr/ADR-011-gcp-neon-deployment-architecture.md) and the
+[deployment runbook](docs/deployment.md).
+
+```text
+Browser → Firebase Hosting (static React/Vite SPA)
+
+Browser → direct HTTPS/SSE → Cloud Run (FastAPI / LangGraph) → Neon PostgreSQL
+                                                             → DeepSeek API
+```
+
+MCP is a separate local stdio adapter over the same database core; see
+[MCP usage](#mcp-usage).
 
 ## SQL safety boundary
 
-`backend/src/ai_sql_analyst/query.py` is the authoritative execution boundary.
-Generated SQL is untrusted, and the boundary is enforced in layers:
+[`backend/src/ai_sql_analyst/query.py`](backend/src/ai_sql_analyst/query.py) is the
+authoritative execution boundary (see
+[ADR-002](adr/ADR-002-read-only-sql-execution-boundary.md)). Generated SQL is
+untrusted, and the boundary is enforced in layers:
 
 - **Validation before execution.** A small lexical pre-check rejects empty input
-  and obviously non-query statement classes. This is a fast, clear rejection,
-  **not** a proof that arbitrary SQL is safe.
+  and obviously non-query statement classes. It is a fast, clear rejection, **not**
+  a proof that arbitrary SQL is safe.
 - **PostgreSQL enforces write protection.** Each call runs in its own
   `SET TRANSACTION READ ONLY` transaction, so writes, DDL, and write-performing
   CTEs are rejected by the server itself.
-- **Single statement only.** Execution goes through a named server-side cursor
-  (extended protocol), which rejects multi-statement input server-side.
+- **Single statement only.** Execution goes through a named server-side cursor,
+  which rejects multi-statement input server-side.
 - **Bounded execution.** A statement timeout is always set, and a lock timeout is
   set where it is meaningful.
-- **Bounded results.** Rows are capped by an application-owned limit; the extra
-  row fetched beyond the cap only sets a `truncated` flag.
+- **Bounded results.** Rows are capped by an application-owned limit; the extra row
+  fetched beyond the cap only sets a `truncated` flag.
 - **Structured failures.** Database errors are returned as structured results
   (`ok: false` with a typed error), not raised through the boundary.
 
 Model and MCP callers control only the SQL text. They cannot set `max_rows`,
 `timeout_ms`, or the connection.
 
-## Dataset (high level)
+## Key engineering decisions
+
+The architectural decisions and their rationale are recorded as ADRs in
+[`adr/`](adr/README.md). Two that most shape the product:
+
+- [ADR-002](adr/ADR-002-read-only-sql-execution-boundary.md) — PostgreSQL-enforced
+  read-only SQL execution.
+- [ADR-004](adr/ADR-004-langgraph-agent-boundary.md) — a provider-neutral LangGraph
+  agent boundary.
+
+In short: the database core is framework-neutral; LangChain and MCP are optional
+adapters at the edges; LangGraph stays provider-neutral; only `model.py` knows
+DeepSeek; the HTTP boundary owns validation and transport, not SQL.
+
+## Dataset
 
 The [Olist Brazilian E-Commerce Public Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
-provides roughly **99k orders** spanning approximately **2016–2018** across
-orders, customers, products, sellers, payments, reviews, and geolocation.
+provides roughly **99k orders** spanning approximately **2016–2018** across orders,
+customers, products, sellers, payments, reviews, and geolocation.
 
 The dataset has important relational and semantic caveats that shape correct SQL.
-See [`data/README.md`](data/README.md) for provenance, acquisition, row counts,
-and the caveats.
+See [`data/README.md`](data/README.md) for provenance, acquisition, row counts, and
+the caveats.
 
 ## Getting started
 
@@ -238,6 +233,16 @@ Start the backend first so the proxy has a target.
 
 ## MCP usage
 
+```text
+MCP client
+    ↓
+mcp_server.py
+    ↓
+schema.py / query.py
+    ↓
+PostgreSQL
+```
+
 Run the MCP server (stdio):
 
 ```bash
@@ -267,7 +272,9 @@ npx @modelcontextprotocol/inspector \
 Public or hosted MCP (HTTP transport, authentication, networking) is **not**
 implemented.
 
-## Testing and verification
+## Testing and evaluation
+
+### Tests
 
 Backend:
 
@@ -300,33 +307,32 @@ The frontend tests use **Vitest** with `jsdom` and React Testing Library;
 ### Agent evaluation (opt-in)
 
 A **20-case golden evaluation suite** scores the real agent end to end against the
-live database. On the current live deterministic baseline, **20/20 cases pass**.
+live database. The recorded deterministic baseline — **2026-10-08**, code revision
+`4a713ce`, qualitative LLM judge disabled — passed **20/20 cases**. This is a dated
+baseline over a small, curated, representative set, not a guarantee of current or
+future performance.
 
 - Exact analytical correctness is validated by **deterministic PostgreSQL oracle
   queries**, not by a model.
 - One limited, informational LLM judge covers only subjective answer
   grounding/scope; it does not decide pass/fail.
-- The intentionally expensive geolocation query is now bounded by the agent's
+- The intentionally expensive geolocation query is bounded by the agent's
   deterministic timeout budget rather than exhausting the tool loop.
 
 The suite is opt-in and not part of CI. See
 [`backend/evals/README.md`](backend/evals/README.md) for the methodology and how
 to run it.
 
-## Current limitations and production hardening
+## Limitations and hardening
 
-OlistIQ is deployed for production use; the following limitations and hardening
-items remain:
+OlistIQ is a publicly deployed, production-oriented analytics application; the
+following limitations and hardening items remain:
 
-- Production CORS is configurable at runtime (`CORS_ALLOWED_ORIGINS`);
-  development relies on the Vite proxy. The public frontend API origin is
-  build-time configuration (`VITE_API_ORIGIN`), not a secret.
-- `POST /query` applies a best-effort, in-memory rate limit: 10 total requests
-  per 60-second fixed window per client key, after which requests receive HTTP
-  `429` with a `Retry-After` header. Counters are process-local and reset on
-  restart, and the effective limit can multiply across Cloud Run instances, so
-  it is not a global quota. The client key is the documented, non-spoof-proof
-  rightmost `X-Forwarded-For` entry. See
+- `POST /query` has a best-effort, process-local rate limit: 10 requests per
+  60-second fixed window per client key by default, after which requests receive
+  HTTP `429` with a `Retry-After` header. Counters reset on restart and can multiply
+  across instances, so it is not a global quota, and the rightmost-`X-Forwarded-For`
+  client key is not spoof-proof. See
   [ADR-012](adr/ADR-012-rate-limiting-guardrail.md).
 - No persistence, checkpointing, conversation memory, or sessions; each request
   is independent.
@@ -340,7 +346,8 @@ items remain:
 - `get_schema()` surfaces an unavailable database as a failure rather than a
   structured result.
 
-See the ADRs for the reasoning and the deliberately deferred hardening.
+See the [ADRs](adr/README.md) for the reasoning and the deliberately deferred
+hardening.
 
 ## Repository layout
 
@@ -369,3 +376,9 @@ ai-sql-analyst/
 - [`data/README.md`](data/README.md) — dataset provenance and SQL caveats.
 - [`adr/README.md`](adr/README.md) — architecture decision records.
 - [`docs/deployment.md`](docs/deployment.md) — production deployment runbook.
+
+## Contact
+
+- GitHub — <https://github.com/S84v/ai-sql-analyst>
+- LinkedIn — <https://www.linkedin.com/in/sarang-dave/>
+- Email — <davesarang08@gmail.com>
